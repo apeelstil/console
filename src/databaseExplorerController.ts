@@ -237,6 +237,6 @@ async function safelyInvoke<T>(operation: () => Promise<{ ok: true; data: T } | 
   try {
     return await operation();
   } catch {
-    return { ok: false as const, error: 'Database metadata service did not respond.' };
+    return { ok: false as const, error: 'Служба метаданных базы данных не отвечает.' };
   }
 }

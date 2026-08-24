@@ -26,7 +26,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
   const refresh = useCallback(async (preferredId?: string) => {
     const api = window.supraDesktop;
     if (!api) {
-      setMessage({ kind: 'error', text: 'Saved query storage is unavailable.' });
+      setMessage({ kind: 'error', text: 'Хранилище сохранённых запросов недоступно.' });
       return;
     }
     const result = await api.listSavedQueries();
@@ -48,7 +48,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
     if (!api) {
       void Promise.resolve().then(() => {
         if (!active) return;
-        setMessage({ kind: 'error', text: 'Saved query storage is unavailable.' });
+        setMessage({ kind: 'error', text: 'Хранилище сохранённых запросов недоступно.' });
         setLoading(false);
       });
       return () => { active = false; };
@@ -65,7 +65,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
       setName(first?.name ?? '');
       setDescription(first?.description ?? '');
     }).catch(() => {
-      if (active) setMessage({ kind: 'error', text: 'Could not load saved queries.' });
+      if (active) setMessage({ kind: 'error', text: 'Не удалось загрузить сохранённые запросы.' });
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -93,7 +93,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
         return;
       }
       setCreating(false);
-      setMessage({ kind: 'success', text: 'Query saved locally.' });
+      setMessage({ kind: 'success', text: 'Запрос сохранён локально.' });
       await refresh(result.data.id);
     } finally {
       setBusy(false);
@@ -116,7 +116,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
         setMessage({ kind: 'error', text: result.error });
         return;
       }
-      setMessage({ kind: 'success', text: 'Saved query details updated.' });
+      setMessage({ kind: 'success', text: 'Параметры сохранённого запроса обновлены.' });
       await refresh(result.data.id);
     } finally {
       setBusy(false);
@@ -135,7 +135,7 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
       }
       setSelectedId(undefined);
       setDeletePending(false);
-      setMessage({ kind: 'success', text: 'Saved query deleted.' });
+      setMessage({ kind: 'success', text: 'Сохранённый запрос удалён.' });
       await refresh();
     } finally {
       setBusy(false);
@@ -145,13 +145,13 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
   return (
     <section className="data-section panel">
       <div className="data-section-toolbar">
-        <div><strong>Saved Queries</strong><small>Stored locally in this Windows profile</small></div>
-        <button type="button" disabled={!editorSql.trim() || busy} onClick={beginCreate}>+ Save current SQL</button>
+        <div><strong>Сохранённые запросы</strong><small>Хранятся локально в профиле Windows</small></div>
+        <button type="button" disabled={!editorSql.trim() || busy} onClick={beginCreate}>+ Сохранить текущий SQL</button>
       </div>
       <div className="data-section-body">
         <div className="record-list saved-query-list">
-          {loading && <div className="record-empty" role="status">Loading saved queries…</div>}
-          {!loading && queries.length === 0 && !creating && <div className="record-empty">No saved queries yet.</div>}
+          {loading && <div className="record-empty" role="status">Загрузка сохранённых запросов…</div>}
+          {!loading && queries.length === 0 && !creating && <div className="record-empty">Сохранённых запросов пока нет.</div>}
           {queries.map((query) => (
             <button
               type="button"
@@ -175,36 +175,36 @@ export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: Saved
         <div className="record-detail">
           {creating ? (
             <>
-              <div className="record-detail-heading"><strong>Save current SQL</strong><small>{editorSql.length} characters</small></div>
-              <label>Name<input value={name} autoFocus onChange={(event) => setName(event.target.value)} /></label>
-              <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+              <div className="record-detail-heading"><strong>Сохранить текущий SQL</strong><small>Символов: {editorSql.length}</small></div>
+              <label>Название<input value={name} autoFocus onChange={(event) => setName(event.target.value)} /></label>
+              <label>Описание<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               <pre>{editorSql}</pre>
               <div className="record-actions">
-                <button type="button" className="secondary" onClick={() => { setCreating(false); void refresh(); }}>Cancel</button>
-                <button type="button" disabled={busy || !name.trim() || !editorSql.trim()} onClick={() => void createQuery()}>Save</button>
+                <button type="button" className="secondary" onClick={() => { setCreating(false); void refresh(); }}>Отмена</button>
+                <button type="button" disabled={busy || !name.trim() || !editorSql.trim()} onClick={() => void createQuery()}>Сохранить</button>
               </div>
             </>
           ) : selected ? (
             <>
-              <div className="record-detail-heading"><strong>Saved query</strong><small>Updated {formatTimestamp(selected.updatedAt)}</small></div>
-              <label>Name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-              <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+              <div className="record-detail-heading"><strong>Сохранённый запрос</strong><small>Обновлён {formatTimestamp(selected.updatedAt)}</small></div>
+              <label>Название<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+              <label>Описание<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               <pre>{selected.sqlText}</pre>
               {deletePending && (
                 <div className="inline-delete-confirm">
-                  <span>Delete this saved query?</span>
-                  <button type="button" className="secondary" onClick={() => setDeletePending(false)}>Cancel</button>
-                  <button type="button" className="danger" disabled={busy} onClick={() => void deleteQuery()}>Delete</button>
+                  <span>Удалить этот сохранённый запрос?</span>
+                  <button type="button" className="secondary" onClick={() => setDeletePending(false)}>Отмена</button>
+                  <button type="button" className="danger" disabled={busy} onClick={() => void deleteQuery()}>Удалить</button>
                 </div>
               )}
               <div className="record-actions">
-                <button type="button" className="danger-link" onClick={() => setDeletePending(true)}>Delete</button>
+                <button type="button" className="danger-link" onClick={() => setDeletePending(true)}>Удалить</button>
                 <span />
-                <button type="button" className="secondary" disabled={busy || !name.trim()} onClick={() => void updateQuery()}>Save details</button>
-                <button type="button" onClick={() => onLoadSql(selected.sqlText, 'saved query')}>Load in editor</button>
+                <button type="button" className="secondary" disabled={busy || !name.trim()} onClick={() => void updateQuery()}>Сохранить параметры</button>
+                <button type="button" onClick={() => onLoadSql(selected.sqlText, 'сохранённым запросом')}>Загрузить в редактор</button>
               </div>
             </>
-          ) : <div className="record-empty detail-empty">Select a saved query or save the current editor contents.</div>}
+          ) : <div className="record-empty detail-empty">Выберите сохранённый запрос или сохраните содержимое редактора.</div>}
           {message && <div className={`data-message ${message.kind}`} role={message.kind === 'error' ? 'alert' : 'status'}>{message.text}</div>}
         </div>
       </div>

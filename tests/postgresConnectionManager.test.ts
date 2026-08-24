@@ -130,7 +130,7 @@ test('Scenario A: successful test uses a temporary Client, SELECT 1, and always 
   const harness = createHarness();
   const result = await harness.manager.testConnection(temporaryRequest);
 
-  assert.equal(result.message, 'Connection successful');
+  assert.equal(result.message, 'Подключение успешно');
   assert.equal(harness.clients.length, 1);
   assert.equal(harness.clients[0]?.connectCalls, 1);
   assert.deepEqual(harness.clients[0]?.queries, ['SELECT 1;']);
@@ -141,7 +141,7 @@ test('Scenario A: successful test uses a temporary Client, SELECT 1, and always 
   assert.equal(harness.configs[0]?.ssl, undefined);
   assert.deepEqual(harness.manager.getConnectionState(), {
     status: 'DISCONNECTED',
-    message: 'Connection successful',
+    message: 'Подключение успешно',
   });
 });
 
@@ -159,7 +159,7 @@ test('Scenario B: failed test returns a safe error, closes the temporary Client,
   await assert.rejects(
     () => manager.testConnection(temporaryRequest),
     (error: unknown) => error instanceof ConnectionManagerError
-      && error.safeMessage === 'Authentication failed. Check the username and password.'
+      && error.safeMessage === 'Ошибка авторизации. Проверьте логин и пароль.'
       && !error.safeMessage.includes(unsafePassword),
   );
   assert.equal(client.endCalls, 1);
@@ -280,7 +280,7 @@ test('Scenario G: a second parallel permanent Connect is blocked', async () => {
   const firstConnect = manager.connect(temporaryRequest);
   await assert.rejects(
     () => manager.connect(temporaryRequest),
-    (error: unknown) => error instanceof ConnectionManagerError && error.safeMessage.includes('already in progress'),
+    (error: unknown) => error instanceof ConnectionManagerError && error.safeMessage.includes('уже выполняется'),
   );
   assert.equal(factoryCalls, 1);
 
@@ -301,7 +301,7 @@ test('Scenario H: unexpected Client error does not throw, clears the Client, and
   const state = harness.manager.getConnectionState();
   assert.equal(state.status, 'ERROR');
   assert.equal(state.connection, undefined);
-  assert.equal(state.message, 'The database server refused the connection.');
+  assert.equal(state.message, 'Сервер базы данных отклонил подключение.');
   assert.equal(harness.clients[0]?.endCalls, 1);
   assert.deepEqual(states, ['CONNECTING', 'CONNECTED', 'ERROR']);
 });
@@ -314,20 +314,20 @@ test('an unexpected Client end event clears the active connection without crashi
   const state = harness.manager.getConnectionState();
   assert.equal(state.status, 'ERROR');
   assert.equal(state.connection, undefined);
-  assert.equal(state.message, 'The PostgreSQL connection was closed unexpectedly.');
+  assert.equal(state.message, 'Подключение к PostgreSQL неожиданно закрыто.');
   assert.equal(harness.clients[0]?.endCalls, 1);
 });
 
 test('connection errors are classified without returning raw details', () => {
   const secret = 'never-return-this-password';
   const cases: Array<[Error & { code?: string }, string]> = [
-    [Object.assign(new Error(`authentication failed ${secret}`), { code: '28P01' }), 'Authentication failed. Check the username and password.'],
-    [Object.assign(new Error('database missing'), { code: '3D000' }), 'The specified database does not exist.'],
-    [Object.assign(new Error('dns failed'), { code: 'ENOTFOUND' }), 'The database host could not be resolved.'],
-    [Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }), 'The database server refused the connection.'],
-    [Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), 'The database server did not respond before the connection timeout.'],
-    [Object.assign(new Error('unreachable'), { code: 'EHOSTUNREACH' }), 'The database server is unreachable.'],
-    [new Error(`unknown failure ${secret}`), 'PostgreSQL connection failed. Check the connection settings and server availability.'],
+    [Object.assign(new Error(`authentication failed ${secret}`), { code: '28P01' }), 'Ошибка авторизации. Проверьте логин и пароль.'],
+    [Object.assign(new Error('database missing'), { code: '3D000' }), 'Указанная база данных не существует.'],
+    [Object.assign(new Error('dns failed'), { code: 'ENOTFOUND' }), 'Не удалось определить адрес хоста базы данных.'],
+    [Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }), 'Сервер базы данных отклонил подключение.'],
+    [Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }), 'Сервер базы данных не ответил за отведённое время.'],
+    [Object.assign(new Error('unreachable'), { code: 'EHOSTUNREACH' }), 'Сервер базы данных недоступен.'],
+    [new Error(`unknown failure ${secret}`), 'Не удалось подключиться к PostgreSQL. Проверьте параметры подключения и доступность сервера.'],
   ];
 
   for (const [error, expected] of cases) {

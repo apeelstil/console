@@ -34,11 +34,11 @@ async function respond<T>(
 ): Promise<IpcResult<T>> {
   try {
     const service = getService();
-    if (!service) return { ok: false, error: 'Database metadata browsing is unavailable.' };
+    if (!service) return { ok: false, error: 'Просмотр метаданных базы данных недоступен.' };
     return { ok: true, data: await operation(service) };
   } catch (error: unknown) {
     if (error instanceof MetadataServiceError) return { ok: false, error: error.safeMessage };
-    return { ok: false, error: 'Failed to load database metadata.' };
+    return { ok: false, error: 'Не удалось загрузить метаданные базы данных.' };
   }
 }
 

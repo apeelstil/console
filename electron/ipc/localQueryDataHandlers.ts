@@ -5,6 +5,7 @@ import {
   type UpdateSavedQueryInput,
 } from '../../shared/localQueryData';
 import type { IpcResult } from '../../shared/connectionProfiles';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import type { LocalQueryActivityService } from '../storage/queryActivityService';
 import { SavedQueryService, SavedQueryServiceError } from '../storage/savedQueryService';
 
@@ -40,11 +41,11 @@ function respondSaved<T>(
 ): IpcResult<T> {
   try {
     const service = getService();
-    if (!service) return { ok: false, error: 'Local saved query storage is unavailable.' };
+    if (!service) return { ok: false, error: USER_MESSAGES.savedQueryStorageUnavailable };
     return { ok: true, data: operation(service) };
   } catch (error: unknown) {
     if (error instanceof SavedQueryServiceError) return { ok: false, error: error.safeMessage };
-    return { ok: false, error: 'The saved query operation could not be completed.' };
+    return { ok: false, error: 'Не удалось завершить операцию с сохранённым запросом.' };
   }
 }
 
@@ -54,10 +55,10 @@ function respondActivity<T>(
 ): IpcResult<T> {
   try {
     const service = getService();
-    if (!service) return { ok: false, error: 'Local query activity storage is unavailable.' };
+    if (!service) return { ok: false, error: USER_MESSAGES.queryActivityStorageUnavailable };
     return { ok: true, data: operation(service) };
   } catch {
-    return { ok: false, error: 'The local query activity could not be read.' };
+    return { ok: false, error: 'Не удалось прочитать локальную историю запросов.' };
   }
 }
 
@@ -97,5 +98,5 @@ function parseString(value: unknown): string {
 }
 
 function invalidInput(): SavedQueryServiceError {
-  return new SavedQueryServiceError('Invalid saved query data.');
+  return new SavedQueryServiceError('Некорректные данные сохранённого запроса.');
 }

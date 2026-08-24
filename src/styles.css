@@ -1362,3 +1362,168 @@ textarea {
 .save-query-dialog footer button {
   min-width: 78px;
 }
+
+.password-input-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.password-input-wrap input {
+  padding-right: 38px;
+}
+
+.password-reveal-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 32px;
+  min-width: 32px;
+  min-height: 24px;
+  padding: 0;
+  color: #58717b;
+  background: transparent;
+  border: 0;
+}
+
+.password-reveal-button:hover:not(:disabled),
+.password-reveal-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pending-transaction-panel.compact {
+  flex: 0 0 auto;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  overflow: visible;
+  color: #5f4516;
+  background: #fff8e8;
+}
+
+.pending-transaction-panel.compact.production {
+  background: #fff1f2;
+}
+
+.pending-production-badge {
+  align-self: flex-start;
+  padding: 3px 7px;
+  color: #fff;
+  background: #a5222f;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.pending-transaction-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.pending-transaction-panel.compact .pending-transaction-title {
+  min-width: 230px;
+}
+
+.pending-transaction-panel.compact .pending-transaction-title > span {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  border-radius: 2px;
+}
+
+.pending-transaction-panel.compact .pending-transaction-title strong {
+  color: #70490a;
+  font-size: 11px;
+  letter-spacing: .55px;
+}
+
+.pending-transaction-panel.compact .pending-transaction-title small {
+  color: #8b6b32;
+  font-size: 9px;
+}
+
+.pending-transaction-panel.compact dl {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  gap: 0;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid #dbc792;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.pending-transaction-panel.compact dl > div {
+  min-width: 0;
+  padding: 5px 8px;
+  border-right: 1px solid #e3d4aa;
+}
+
+.pending-transaction-panel.compact dl > div:last-child {
+  border-right: 0;
+}
+
+.pending-transaction-panel.compact dt {
+  margin-bottom: 2px;
+  color: #8a7549;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.pending-transaction-panel.compact dd {
+  color: #4d4330;
+  font: 10px Consolas, monospace;
+}
+
+.pending-transaction-panel.compact .rollback-countdown dd {
+  color: #9a5d08;
+  font-weight: 700;
+}
+
+.pending-transaction-panel.compact .pending-transaction-actions {
+  flex: 0 0 auto;
+  gap: 7px;
+  margin: 0;
+}
+
+.pending-transaction-panel.compact .pending-transaction-actions button {
+  min-width: 92px;
+  min-height: 29px;
+}
+
+.pending-transaction-panel.compact .rollback-action {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.pending-transaction-panel.compact .commit-action {
+  color: #77500d;
+  background: #fff3d7;
+  border-color: #c99c49;
+}
+
+@media (max-width: 1180px) {
+  .pending-transaction-row {
+    gap: 8px;
+  }
+
+  .pending-transaction-panel.compact .pending-transaction-title {
+    min-width: 190px;
+  }
+
+  .pending-transaction-panel.compact .pending-transaction-actions button {
+    min-width: 78px;
+  }
+}

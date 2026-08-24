@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import type Database from 'better-sqlite3';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { Client } from 'pg';
 import { registerConnectionProfileHandlers } from './ipc/connectionProfileHandlers';
 import { registerPostgresConnectionHandlers } from './ipc/postgresConnectionHandlers';
@@ -10,11 +11,8 @@ import { registerLocalQueryDataHandlers } from './ipc/localQueryDataHandlers';
 import { registerMutationTransactionHandlers } from './ipc/mutationTransactionHandlers';
 import { PostgresConnectionManager } from './postgres/postgresConnectionManager';
 import { PostgresMetadataService } from './postgres/postgresMetadataService';
-import { PostgresQueryExecutionService } from './postgres/postgresQueryExecutionService';
-import { PgCancelableQueryRunner } from './postgres/pgCancelableQueryRunner';
-import { SqlSafetyService } from './postgres/sqlSafetyService';
-import { MutationSafetyService } from './postgres/mutationSafetyService';
-import { MutationTransactionManager } from './postgres/mutationTransactionManager';
+import type { PostgresQueryExecutionService } from './postgres/postgresQueryExecutionService';
+import type { MutationTransactionManager } from './postgres/mutationTransactionManager';
 import { PostgresOperationGate } from './postgres/postgresOperationGate';
 import { ConnectionProfileRepository } from './storage/connectionProfileRepository';
 import { ConnectionProfileService } from './storage/connectionProfileService';
@@ -29,6 +27,7 @@ import { MUTATION_TRANSACTION_CHANNELS } from '../shared/mutationTransaction';
 import { QUERY_EXECUTION_CHANNELS } from '../shared/queryExecution';
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
+const startupStartedAt = performance.now();
 let localDatabase: Database.Database | undefined;
 let profileService: ConnectionProfileService | undefined;
 let connectionManager: PostgresConnectionManager | undefined;
@@ -39,6 +38,12 @@ let queryActivityService: LocalQueryActivityService | undefined;
 let mutationTransactionManager: MutationTransactionManager | undefined;
 const postgresOperationGate = new PostgresOperationGate();
 let shutdownStarted = false;
+
+function markStartup(label: string): void {
+  if (!isDevelopment) return;
+  const elapsedMs = Math.round(performance.now() - startupStartedAt);
+  console.info(`[SUPRA startup +${elapsedMs}ms] ${label}`);
+}
 
 function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -68,7 +73,11 @@ function createWindow(): void {
     },
   });
 
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => {
+    markStartup('window ready to show');
+    window.show();
+  });
+  window.webContents.once('did-finish-load', () => markStartup('renderer loaded'));
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => {
     const allowedUrl = isDevelopment ? process.env.VITE_DEV_SERVER_URL : undefined;
@@ -82,6 +91,60 @@ function createWindow(): void {
   }
 }
 
+async function initializeDeferredSqlServices(): Promise<void> {
+  const manager = connectionManager;
+  const activity = queryActivityService;
+  if (!manager || !activity) return;
+
+  try {
+    const [queryModule, runnerModule, safetyModule] = await Promise.all([
+      import('./postgres/postgresQueryExecutionService.js'),
+      import('./postgres/pgCancelableQueryRunner.js'),
+      import('./postgres/sqlSafetyService.js'),
+    ]);
+    const safetyService = new safetyModule.SqlSafetyService();
+    await safetyService.initialize();
+    const service = new queryModule.PostgresQueryExecutionService(
+      manager,
+      safetyService,
+      activity,
+      postgresOperationGate,
+      new runnerModule.PgCancelableQueryRunner(),
+    );
+    queryExecutionService = service;
+    service.subscribe((state) => {
+      broadcast(QUERY_EXECUTION_CHANNELS.stateChanged, state);
+    });
+  } catch {
+    queryExecutionService = undefined;
+    markStartup('SELECT services unavailable');
+  }
+
+  try {
+    const [managerModule, safetyModule] = await Promise.all([
+      import('./postgres/mutationTransactionManager.js'),
+      import('./postgres/mutationSafetyService.js'),
+    ]);
+    const safetyService = new safetyModule.MutationSafetyService();
+    await safetyService.initialize();
+    const transactionManager = new managerModule.MutationTransactionManager(
+      manager,
+      safetyService,
+      postgresOperationGate,
+      activity,
+    );
+    mutationTransactionManager = transactionManager;
+    transactionManager.subscribe((state) => {
+      broadcast(MUTATION_TRANSACTION_CHANNELS.stateChanged, state);
+    });
+  } catch {
+    mutationTransactionManager = undefined;
+    markStartup('mutation services unavailable');
+  }
+
+  markStartup('deferred SQL services ready');
+}
+
 ipcMain.handle('app:get-platform', () => process.platform);
 registerConnectionProfileHandlers(() => profileService);
 registerPostgresConnectionHandlers(() => connectionManager);
@@ -90,7 +153,8 @@ registerQueryExecutionHandlers(() => queryExecutionService);
 registerLocalQueryDataHandlers(() => savedQueryService, () => queryActivityService);
 registerMutationTransactionHandlers(() => mutationTransactionManager);
 
-void app.whenReady().then(async () => {
+void app.whenReady().then(() => {
+  markStartup('Electron ready');
   try {
     const databasePath = path.join(app.getPath('userData'), LOCAL_DATABASE_FILENAME);
     localDatabase = initializeDatabase(databasePath);
@@ -119,46 +183,9 @@ void app.whenReady().then(async () => {
       }
       broadcast(POSTGRES_CONNECTION_CHANNELS.stateChanged, state);
     });
+    markStartup('local storage and connection services ready');
   } catch {
     profileService = undefined;
-  }
-
-  if (connectionManager) {
-    try {
-      const safetyService = new SqlSafetyService();
-      await safetyService.initialize();
-      if (!queryActivityService) throw new Error('Local query activity storage is unavailable.');
-      queryExecutionService = new PostgresQueryExecutionService(
-        connectionManager,
-        safetyService,
-        queryActivityService,
-        postgresOperationGate,
-        new PgCancelableQueryRunner(),
-      );
-      queryExecutionService.subscribe((state) => {
-        broadcast(QUERY_EXECUTION_CHANNELS.stateChanged, state);
-      });
-    } catch {
-      queryExecutionService = undefined;
-    }
-  }
-
-  if (connectionManager && queryActivityService) {
-    try {
-      const mutationSafetyService = new MutationSafetyService();
-      await mutationSafetyService.initialize();
-      mutationTransactionManager = new MutationTransactionManager(
-        connectionManager,
-        mutationSafetyService,
-        postgresOperationGate,
-        queryActivityService,
-      );
-      mutationTransactionManager.subscribe((state) => {
-        broadcast(MUTATION_TRANSACTION_CHANNELS.stateChanged, state);
-      });
-    } catch {
-      mutationTransactionManager = undefined;
-    }
   }
 
   connectionManager?.setBeforeDisconnectHandler(async () => {
@@ -167,6 +194,8 @@ void app.whenReady().then(async () => {
   });
 
   createWindow();
+  markStartup('BrowserWindow created');
+  void initializeDeferredSqlServices();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 

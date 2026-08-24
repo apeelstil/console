@@ -20,7 +20,7 @@ export function SaveQueryDialog({ sqlText, onCancel, onSaved }: SaveQueryDialogP
 
     const api = window.supraDesktop;
     if (!api) {
-      setError('Saved query storage is unavailable.');
+      setError('Хранилище сохранённых запросов недоступно.');
       return;
     }
 
@@ -35,7 +35,7 @@ export function SaveQueryDialog({ sqlText, onCancel, onSaved }: SaveQueryDialogP
       );
       if (!result.ok) setError(result.error);
     } catch {
-      setError('The saved query operation did not respond.');
+      setError('Операция сохранения запроса не отвечает.');
     } finally {
       setBusy(false);
     }
@@ -46,13 +46,13 @@ export function SaveQueryDialog({ sqlText, onCancel, onSaved }: SaveQueryDialogP
       <section className="save-query-dialog" role="dialog" aria-modal="true" aria-labelledby="save-query-title">
         <header>
           <div>
-            <h2 id="save-query-title">Save query</h2>
-            <p>Store the current SQL Editor contents in this Windows profile.</p>
+            <h2 id="save-query-title">Сохранить запрос</h2>
+            <p>Сохранение текущего содержимого SQL-редактора в профиле Windows.</p>
           </div>
         </header>
         <form onSubmit={(event) => void submit(event)}>
           <label htmlFor="saved-query-name">
-            Name
+            Название
             <input
               id="saved-query-name"
               autoFocus
@@ -63,7 +63,7 @@ export function SaveQueryDialog({ sqlText, onCancel, onSaved }: SaveQueryDialogP
             />
           </label>
           <label htmlFor="saved-query-description">
-            Description <span>Optional</span>
+            Описание <span>Необязательно</span>
             <textarea
               id="saved-query-description"
               value={description}
@@ -72,8 +72,8 @@ export function SaveQueryDialog({ sqlText, onCancel, onSaved }: SaveQueryDialogP
           </label>
           {error && <div className="data-message error" role="alert">{error}</div>}
           <footer>
-            <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
-            <button type="submit" disabled={busy || !name.trim() || !sqlText.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Отмена</button>
+            <button type="submit" disabled={busy || !name.trim() || !sqlText.trim()}>{busy ? 'Сохранение…' : 'Сохранить'}</button>
           </footer>
         </form>
       </section>

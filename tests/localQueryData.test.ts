@@ -257,8 +257,8 @@ test('Audit storage failure is visible, secret-free, and does not prevent Histor
   const result = await service.recordAttempt(attempt('SUCCESS'));
 
   assert.equal(history.entries.length, 1);
-  assert.deepEqual(result.warnings, ['Audit log could not be written.']);
-  assert.deepEqual(reports, ['[SUPRA] Audit log could not be written.']);
+  assert.deepEqual(result.warnings, ['Не удалось записать журнал аудита.']);
+  assert.deepEqual(reports, ['[SUPRA] Не удалось записать журнал аудита.']);
   assert.equal(JSON.stringify({ result, reports }).includes('SELECT 1'), false);
 });
 

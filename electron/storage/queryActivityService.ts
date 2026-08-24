@@ -62,11 +62,11 @@ export interface AuditIdentityProvider {
 
 export class NodeAuditIdentityProvider implements AuditIdentityProvider {
   getWindowsUser(): string {
-    return userInfo().username || 'Unknown Windows user';
+    return userInfo().username || 'Неизвестный пользователь Windows';
   }
 
   getComputerName(): string {
-    return hostname() || 'Unknown computer';
+    return hostname() || 'Неизвестный компьютер';
   }
 }
 
@@ -105,7 +105,7 @@ export class LocalQueryActivityService implements MutationActivityRecorder {
     try {
       this.historyRepository.add(historyEntry);
     } catch {
-      const message = 'Query history could not be written.';
+      const message = 'Не удалось записать историю запросов.';
       warnings.push(message);
       this.reportStorageWarning(`[SUPRA] ${message}`);
     }
@@ -155,7 +155,7 @@ export class LocalQueryActivityService implements MutationActivityRecorder {
       });
       return [];
     } catch {
-      const message = 'Audit log could not be written.';
+      const message = 'Не удалось записать журнал аудита.';
       this.reportStorageWarning(`[SUPRA] ${message}`);
       return [message];
     }

@@ -4,7 +4,10 @@ import type {
   PendingMutationTransaction,
   PreparedMutation,
 } from '../../shared/mutationTransaction';
+import { MUTATION_CONFIRMATION_TIMEOUT_MS } from '../../shared/mutationTransaction';
+export { MUTATION_CONFIRMATION_TIMEOUT_MS } from '../../shared/mutationTransaction';
 import type { ActiveConnectionInfo, ConnectionState } from '../../shared/postgresConnection';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import type {
   MutationActivityRecorder,
   QueryActivityAttempt,
@@ -30,7 +33,6 @@ const STATEMENT_TIMEOUT_SQL = "SET LOCAL statement_timeout = '15000ms';";
 const LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '5000ms';";
 const COMMIT_SQL = 'COMMIT;';
 const ROLLBACK_SQL = 'ROLLBACK;';
-export const MUTATION_CONFIRMATION_TIMEOUT_MS = 120_000;
 
 export interface MutationActiveClientProvider {
   getConnectionState(): ConnectionState;
@@ -110,7 +112,7 @@ export class MutationTransactionManager {
     } catch (error: unknown) {
       const details = error instanceof MutationSafetyError
         ? error.details
-        : { message: 'The mutation could not be validated safely.', operation: 'MUTATION' as const };
+        : { message: 'Не удалось безопасно проверить запрос изменения.', operation: 'MUTATION' as const };
       const warnings = await this.recordAttempt({
         sqlText: sql,
         connection,
@@ -155,13 +157,13 @@ export class MutationTransactionManager {
     this.assertCanStartMutation();
     const preparation = this.preparation;
     if (!preparation || preparation.publicValue.preparationId !== preparationId) {
-      throw new MutationTransactionError('The mutation confirmation is invalid or has expired.');
+      throw new MutationTransactionError('Подтверждение изменения недействительно или устарело.');
     }
     this.preparation = undefined;
 
     const connection = this.getConnectedTarget();
     if (connectionKey(connection) !== preparation.connectionKey) {
-      throw new MutationTransactionError('The active database changed. Prepare the mutation again.');
+      throw new MutationTransactionError('Активная база данных изменилась. Подготовьте изменение повторно.');
     }
 
     let safeQuery: SafeMutationQuery;
@@ -170,7 +172,7 @@ export class MutationTransactionManager {
     } catch (error: unknown) {
       const message = error instanceof MutationSafetyError
         ? error.details.message
-        : 'The mutation could not be revalidated safely.';
+        : 'Не удалось повторно и безопасно проверить запрос изменения.';
       const warnings = await this.recordAttempt({
         sqlText: preparation.normalizedSql,
         connection,
@@ -225,6 +227,7 @@ export class MutationTransactionManager {
 
     const affectedRows = normalizeAffectedRows(result);
     const durationMs = Math.max(0, Date.now() - startedMs);
+    const rollbackDeadlineAt = new Date(Date.now() + MUTATION_CONFIRMATION_TIMEOUT_MS).toISOString();
     const publicValue: PendingMutationTransaction = {
       status: 'PENDING_CONFIRMATION',
       transactionId,
@@ -232,6 +235,7 @@ export class MutationTransactionManager {
       target: safeQuery.target,
       affectedRows,
       startedAt,
+      rollbackDeadlineAt,
       connection,
     };
     this.pending = { publicValue, sqlText: safeQuery.normalizedSql };
@@ -251,7 +255,7 @@ export class MutationTransactionManager {
       auditOutcome: 'PENDING',
     });
     if (this.pending?.publicValue.transactionId !== transactionId) {
-      throw new MutationTransactionError('The connection was lost and the mutation transaction was rolled back.');
+      throw new MutationTransactionError('Подключение потеряно, транзакция изменения отменена через ROLLBACK.');
     }
     if (storageWarnings.length > 0) {
       publicValue.storageWarnings = storageWarnings;
@@ -271,7 +275,7 @@ export class MutationTransactionManager {
         { mutationTransactionId: transactionId },
       );
       const warnings = await this.recordAudit(transactionEvent(pending, 'COMMIT', 'COMMITTED'));
-      this.finishTransaction(transactionId, `Changes committed${warningSuffix(warnings)}`);
+      this.finishTransaction(transactionId, `Изменения зафиксированы${warningSuffix(warnings)}`);
       return this.getState();
     } catch (error: unknown) {
       const commitFailure = error instanceof CommitTransactionFailure ? error : undefined;
@@ -286,7 +290,7 @@ export class MutationTransactionManager {
         this.setState(pending.publicValue);
         this.startRollbackTimer(transactionId);
         throw new MutationTransactionError(withWarnings(
-          'COMMIT failed and ROLLBACK could not be confirmed. The transaction remains pending.',
+          'COMMIT завершился ошибкой, а ROLLBACK не подтверждён. Транзакция остаётся в ожидании.',
           warnings,
         ));
       }
@@ -316,7 +320,7 @@ export class MutationTransactionManager {
     const warnings = await this.recordAudit(transactionEvent(pending, 'ROLLBACK', 'CONNECTION_LOST'));
     this.setState({
       status: 'IDLE',
-      message: `Transaction rolled back because the connection was lost${warningSuffix(warnings)}`,
+      message: `Транзакция отменена через ROLLBACK из-за потери подключения${warningSuffix(warnings)}`,
     });
   }
 
@@ -335,10 +339,10 @@ export class MutationTransactionManager {
       const outcome = source === 'AUTO' ? 'AUTO_ROLLED_BACK' : 'ROLLED_BACK';
       const warnings = await this.recordAudit(transactionEvent(pending, 'ROLLBACK', outcome));
       const message = source === 'AUTO'
-        ? 'Transaction automatically rolled back due to timeout'
+        ? 'Транзакция автоматически отменена через ROLLBACK по тайм-ауту'
         : source === 'DISCONNECT'
-          ? 'Transaction rolled back before disconnect'
-          : 'Changes rolled back';
+          ? 'Транзакция отменена через ROLLBACK перед отключением'
+          : 'Изменения отменены через ROLLBACK';
       this.finishTransaction(transactionId, `${message}${warningSuffix(warnings)}`);
       return this.getState();
     } catch (error: unknown) {
@@ -367,14 +371,14 @@ export class MutationTransactionManager {
     if (this.state.status === 'EXECUTING'
       || this.state.status === 'COMMITTING'
       || this.state.status === 'ROLLING_BACK') {
-      throw new MutationTransactionError('A mutation transaction operation is already in progress.');
+      throw new MutationTransactionError('Операция с транзакцией изменения уже выполняется.');
     }
   }
 
   private getConnectedTarget(): ActiveConnectionInfo {
     const state = this.connectionManager.getConnectionState();
     if (state.status !== 'CONNECTED' || !state.connection) {
-      throw new MutationTransactionError('Connect to a database before executing a mutation.');
+      throw new MutationTransactionError('Подключитесь к базе данных перед выполнением изменения.');
     }
     return { ...state.connection };
   }
@@ -384,7 +388,7 @@ export class MutationTransactionManager {
     if (!pending
       || this.state.status !== 'PENDING_CONFIRMATION'
       || pending.publicValue.transactionId !== transactionId) {
-      throw new MutationTransactionError('No matching uncommitted mutation transaction exists.');
+      throw new MutationTransactionError('Соответствующая незафиксированная транзакция изменения не найдена.');
     }
     return pending;
   }
@@ -416,7 +420,7 @@ export class MutationTransactionManager {
     try {
       return (await this.activityRecorder.recordAttempt(attempt)).warnings;
     } catch {
-      const warning = 'Query activity storage is unavailable.';
+      const warning = USER_MESSAGES.queryActivityStorageUnavailable;
       console.error(`[SUPRA] ${warning}`);
       return [warning];
     }
@@ -426,7 +430,7 @@ export class MutationTransactionManager {
     try {
       return (await this.activityRecorder.recordAuditEvent(event)).warnings;
     } catch {
-      const warning = 'Audit log storage is unavailable.';
+      const warning = USER_MESSAGES.auditStorageUnavailable;
       console.error(`[SUPRA] ${warning}`);
       return [warning];
     }
@@ -484,7 +488,7 @@ class CommitTransactionFailure extends Error {
     public readonly originalError: unknown,
     public readonly rollbackSucceeded: boolean,
   ) {
-    super('Commit transaction failed.');
+    super('Не удалось выполнить COMMIT транзакции.');
     this.name = 'CommitTransactionFailure';
   }
 }
@@ -503,30 +507,30 @@ function getSafeMutationError(error: unknown) {
     ? error.code
     : undefined;
   if (code === '23505') {
-    return { kind: 'EXECUTION' as const, message: 'The mutation violates a unique constraint.', sqlState: code };
+    return { kind: 'EXECUTION' as const, message: 'Изменение нарушает ограничение уникальности.', sqlState: code };
   }
   if (code === '23503') {
-    return { kind: 'EXECUTION' as const, message: 'The mutation violates a foreign key constraint.', sqlState: code };
+    return { kind: 'EXECUTION' as const, message: 'Изменение нарушает ограничение внешнего ключа.', sqlState: code };
   }
   if (code === '23502') {
-    return { kind: 'EXECUTION' as const, message: 'The mutation violates a required column constraint.', sqlState: code };
+    return { kind: 'EXECUTION' as const, message: 'Изменение нарушает ограничение обязательного столбца.', sqlState: code };
   }
   const safeError = getSafeQueryError(error);
   if (safeError.sqlState === '55P03') {
     return {
       kind: 'TIMEOUT' as const,
-      message: 'The mutation could not acquire a database lock within 5 seconds.',
+      message: 'Изменению не удалось получить блокировку базы данных за 5 секунд.',
       sqlState: safeError.sqlState,
     };
   }
   if (safeError.kind === 'TIMEOUT') {
-    return { ...safeError, message: 'The mutation exceeded the 15 second statement timeout.' };
+    return { ...safeError, message: 'Превышен 15-секундный тайм-аут выполнения изменения.' };
   }
   if (safeError.kind === 'PERMISSION_DENIED') {
-    return { ...safeError, message: 'Permission denied while executing the mutation.' };
+    return { ...safeError, message: 'Недостаточно прав для выполнения изменения.' };
   }
   if (safeError.kind === 'EXECUTION') {
-    return { ...safeError, message: 'The INSERT or UPDATE statement could not be executed.' };
+    return { ...safeError, message: 'Не удалось выполнить запрос INSERT или UPDATE.' };
   }
   return safeError;
 }
@@ -578,7 +582,7 @@ function warningSuffix(warnings: string[]): string {
 }
 
 function withWarnings(message: string, warnings: string[]): string {
-  return warnings.length > 0 ? `${message} Storage warning: ${warnings.join(' ')}` : message;
+  return warnings.length > 0 ? `${message} Предупреждение хранилища: ${warnings.join(' ')}` : message;
 }
 
 function clonePreparation(preparation: PreparedMutation): PreparedMutation {

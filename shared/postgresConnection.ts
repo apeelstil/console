@@ -31,7 +31,7 @@ export type ConnectionRequest =
     };
 
 export interface ConnectionTestResult {
-  message: 'Connection successful';
+  message: 'Подключение успешно';
   durationMs: number;
 }
 

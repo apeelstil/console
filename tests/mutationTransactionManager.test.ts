@@ -165,7 +165,7 @@ test('12: COMMIT completes only the matching pending transaction and cannot be r
 
   const state = await harness.manager.commit(pending.transactionId);
 
-  assert.deepEqual(state, { status: 'IDLE', message: 'Changes committed' });
+  assert.deepEqual(state, { status: 'IDLE', message: 'Изменения зафиксированы' });
   assert.equal(harness.client.requests.at(-1), 'COMMIT;');
   assert.equal(harness.timer.cleared, true);
   await assert.rejects(() => harness.manager.commit(pending.transactionId), MutationTransactionError);
@@ -177,7 +177,7 @@ test('13: ROLLBACK cancels the pending transaction and cannot be repeated', asyn
 
   const state = await harness.manager.rollback(pending.transactionId);
 
-  assert.deepEqual(state, { status: 'IDLE', message: 'Changes rolled back' });
+  assert.deepEqual(state, { status: 'IDLE', message: 'Изменения отменены через ROLLBACK' });
   assert.equal(harness.client.requests.at(-1), 'ROLLBACK;');
   await assert.rejects(() => harness.manager.rollback(pending.transactionId), MutationTransactionError);
 });
@@ -191,7 +191,7 @@ test('an unconfirmed COMMIT and fallback ROLLBACK keep the transaction exclusive
   await assert.rejects(
     () => harness.manager.commit(pending.transactionId),
     (error: unknown) => error instanceof MutationTransactionError
-      && error.safeMessage.includes('transaction remains pending')
+      && error.safeMessage.includes('Транзакция остаётся в ожидании')
       && !error.safeMessage.includes('raw'),
   );
 
@@ -210,7 +210,7 @@ test('14: statement error immediately ROLLBACKs and creates no pending transacti
   await assert.rejects(
     () => harness.manager.executeMutation(prepared.preparationId),
     (error: unknown) => error instanceof MutationTransactionError
-      && error.safeMessage === 'The mutation violates a unique constraint.'
+      && error.safeMessage === 'Изменение нарушает ограничение уникальности.'
       && !error.safeMessage.includes('raw duplicate'),
   );
 
@@ -246,7 +246,7 @@ test('16: SELECT and metadata are blocked by the main-process gate while pending
   await assert.rejects(() => metadataService.listSchemas());
 
   assert.equal(harness.client.requests.includes('SELECT 1'), false);
-  assert.equal(harness.activity.attempts.at(-1)?.errorMessage?.includes('COMMIT or ROLLBACK'), true);
+  assert.equal(harness.activity.attempts.at(-1)?.errorMessage?.includes('COMMIT или ROLLBACK'), true);
 });
 
 test('17: pending transaction automatically rolls back after 120 seconds', async () => {
@@ -258,7 +258,7 @@ test('17: pending transaction automatically rolls back after 120 seconds', async
   assert.equal(harness.client.requests.at(-1), 'ROLLBACK;');
   assert.deepEqual(harness.manager.getState(), {
     status: 'IDLE',
-    message: 'Transaction automatically rolled back due to timeout',
+    message: 'Транзакция автоматически отменена через ROLLBACK по тайм-ауту',
   });
   assert.equal(harness.activity.auditEvents.at(-1)?.outcome, 'AUTO_ROLLED_BACK');
 });

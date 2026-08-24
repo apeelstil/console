@@ -33,7 +33,7 @@ export class SavedQueryService {
 
   updateQuery(input: UpdateSavedQueryInput): SavedQuery {
     const current = this.repository.findById(input.id);
-    if (!current) throw new SavedQueryServiceError('The selected saved query no longer exists.');
+    if (!current) throw new SavedQueryServiceError('Выбранный сохранённый запрос больше не существует.');
     const normalized = normalizeInput(input);
     return this.repository.update({
       ...current,
@@ -44,7 +44,7 @@ export class SavedQueryService {
 
   deleteQuery(id: string): void {
     if (!this.repository.delete(id)) {
-      throw new SavedQueryServiceError('The selected saved query no longer exists.');
+      throw new SavedQueryServiceError('Выбранный сохранённый запрос больше не существует.');
     }
   }
 }
@@ -53,7 +53,7 @@ function normalizeInput(input: CreateSavedQueryInput): Pick<SavedQuery, 'name' |
   const name = input.name.trim();
   const sqlText = input.sqlText.trim();
   const description = input.description?.trim() || null;
-  if (!name) throw new SavedQueryServiceError('Saved query name is required.');
-  if (!sqlText) throw new SavedQueryServiceError('SQL cannot be empty.');
+  if (!name) throw new SavedQueryServiceError('Укажите название сохранённого запроса.');
+  if (!sqlText) throw new SavedQueryServiceError('SQL не может быть пустым.');
   return { name, description, sqlText };
 }

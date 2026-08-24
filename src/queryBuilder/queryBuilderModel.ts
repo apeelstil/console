@@ -146,7 +146,7 @@ export function prepareGeneratedSql(
   state: QueryBuilderState,
   currentEditorSql: string,
 ): GeneratedSqlRequest {
-  if (!state.object) throw new Error('Select a table or view in Database Explorer.');
+  if (!state.object) throw new Error('Выберите таблицу или представление в обозревателе БД.');
   const sql = generateSelectSql({
     object: state.object,
     columns: state.columns,

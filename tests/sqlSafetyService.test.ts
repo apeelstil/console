@@ -39,26 +39,26 @@ test('3: JOIN, subquery, and UNION SELECT forms are allowed', async () => {
 });
 
 test('4: multiple statements are rejected even when every statement is SELECT', async () => {
-  await assertSafetyError('SELECT 1; SELECT 2;', 'NOT_ALLOWED', 'Exactly one SELECT');
+  await assertSafetyError('SELECT 1; SELECT 2;', 'NOT_ALLOWED', 'Разрешён ровно один запрос SELECT');
 });
 
 test('5: INSERT is rejected by AST statement type', async () => {
-  await assertSafetyError('INSERT INTO orders(id) VALUES (1)', 'NOT_ALLOWED', 'Only a SELECT');
+  await assertSafetyError('INSERT INTO orders(id) VALUES (1)', 'NOT_ALLOWED', 'Разрешён только запрос SELECT');
 });
 
 test('6: UPDATE is rejected by AST statement type', async () => {
-  await assertSafetyError('UPDATE orders SET status = \'DONE\'', 'NOT_ALLOWED', 'Only a SELECT');
+  await assertSafetyError('UPDATE orders SET status = \'DONE\'', 'NOT_ALLOWED', 'Разрешён только запрос SELECT');
 });
 
 test('7: DELETE is rejected by AST statement type', async () => {
-  await assertSafetyError('DELETE FROM orders', 'NOT_ALLOWED', 'Only a SELECT');
+  await assertSafetyError('DELETE FROM orders', 'NOT_ALLOWED', 'Разрешён только запрос SELECT');
 });
 
 test('8: a data-modifying CTE is rejected', async () => {
   await assertSafetyError(
     'WITH removed AS (DELETE FROM orders RETURNING id) SELECT id FROM removed',
     'NOT_ALLOWED',
-    'Data-modifying CTEs',
+    'CTE, изменяющие данные',
   );
 });
 
@@ -71,8 +71,8 @@ test('9: SELECT INTO is rejected', async () => {
 });
 
 test('10: FOR UPDATE and FOR SHARE locking clauses are rejected', async () => {
-  await assertSafetyError('SELECT * FROM orders FOR UPDATE', 'NOT_ALLOWED', 'locking clauses');
-  await assertSafetyError('SELECT * FROM orders FOR SHARE', 'NOT_ALLOWED', 'locking clauses');
+  await assertSafetyError('SELECT * FROM orders FOR UPDATE', 'NOT_ALLOWED', 'Блокирующие конструкции SELECT');
+  await assertSafetyError('SELECT * FROM orders FOR SHARE', 'NOT_ALLOWED', 'Блокирующие конструкции SELECT');
 });
 
 test('11: DDL, CALL, DO, COPY, transaction, and utility statements are rejected', async () => {
@@ -89,12 +89,12 @@ test('11: DDL, CALL, DO, COPY, transaction, and utility statements are rejected'
   ];
 
   for (const sql of forbidden) {
-    await assertSafetyError(sql, 'NOT_ALLOWED', 'Only a SELECT');
+    await assertSafetyError(sql, 'NOT_ALLOWED', 'Разрешён только запрос SELECT');
   }
 });
 
 test('empty SQL and PostgreSQL syntax errors are rejected safely', async () => {
-  await assertSafetyError('   ', 'NOT_ALLOWED', 'Enter a SELECT');
+  await assertSafetyError('   ', 'NOT_ALLOWED', 'Введите запрос SELECT');
   await assert.rejects(
     () => service.validateSelect('SELECT FROM'),
     (error: unknown) => error instanceof SqlSafetyError

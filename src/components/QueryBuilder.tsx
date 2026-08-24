@@ -48,7 +48,7 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
           ? error.safeMessage
           : error instanceof Error
             ? error.message
-            : 'Unable to generate SQL.',
+            : 'Не удалось сформировать SQL.',
       );
     }
   };
@@ -62,37 +62,37 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
   return (
     <section className="builder panel">
       <div className="panel-heading builder-heading">
-        <div><span>Query Builder</span><small>Visual SELECT draft</small></div>
+        <div><span>Конструктор запросов</span><small>Визуальная подготовка SELECT</small></div>
         <button
           type="button"
           className="secondary compact-action"
           disabled={!state.object}
           onClick={() => updateState(resetQueryBuilder(state))}
-        >Reset Builder</button>
+        >Сбросить</button>
       </div>
 
       {!state.object ? (
-        <div className="builder-empty">Select a table or view in Database Explorer.</div>
+        <div className="builder-empty">Выберите таблицу или представление слева.</div>
       ) : (
         <div className="builder-content">
           <div className="builder-source">
-            <label>Schema<input readOnly value={state.object.schema} /></label>
-            <label>{state.object.type === 'VIEW' ? 'View' : 'Table'}<input readOnly value={state.object.name} /></label>
+            <label>Схема<input readOnly value={state.object.schema} /></label>
+            <label>{state.object.type === 'VIEW' ? 'Представление' : 'Таблица'}<input readOnly value={state.object.name} /></label>
             <span className={`object-type ${state.object.type.toLowerCase()}`}>{state.object.type}</span>
           </div>
 
           <div className="builder-workspace">
             <section className="field-picker">
               <div className="builder-section-heading">
-                <span>SELECT fields <small>{state.selectedColumns.length}/{state.columns.length}</small></span>
+                <span>Поля SELECT <small>{state.selectedColumns.length}/{state.columns.length}</small></span>
                 <div>
-                  <button type="button" disabled={state.columns.length === 0} onClick={() => updateState(selectAllColumns(state))}>Select all</button>
-                  <button type="button" disabled={state.selectedColumns.length === 0} onClick={() => updateState(clearSelectedColumns(state))}>Clear</button>
+                  <button type="button" disabled={state.columns.length === 0} onClick={() => updateState(selectAllColumns(state))}>Выбрать все</button>
+                  <button type="button" disabled={state.selectedColumns.length === 0} onClick={() => updateState(clearSelectedColumns(state))}>Очистить</button>
                 </div>
               </div>
               <div className="field-list">
                 {state.columns.length === 0 ? (
-                  <div className="builder-inline-empty">Column metadata is loading or unavailable.</div>
+                  <div className="builder-inline-empty">Метаданные столбцов загружаются или недоступны.</div>
                 ) : state.columns.map((column) => (
                   <label className="field-option" key={column.name}>
                     <input
@@ -114,7 +114,7 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
                   <span>WHERE</span>
                   <div className="match-mode">
                     <label>
-                      Match
+                      Условия
                       <select
                         value={state.matchMode}
                         onChange={(event) => updateState({
@@ -122,16 +122,16 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
                           matchMode: event.target.value === 'OR' ? 'OR' : 'AND',
                         })}
                       >
-                        <option value="AND">ALL conditions (AND)</option>
-                        <option value="OR">ANY condition (OR)</option>
+                        <option value="AND">Все условия (AND)</option>
+                        <option value="OR">Любое условие (OR)</option>
                       </select>
                     </label>
-                    <button type="button" disabled={state.columns.length === 0} onClick={() => updateState(addWhereCondition(state))}>+ Add condition</button>
+                    <button type="button" disabled={state.columns.length === 0} onClick={() => updateState(addWhereCondition(state))}>+ Добавить условие</button>
                   </div>
                 </div>
                 <div className="conditions-list">
                   {state.conditions.length === 0 ? (
-                    <div className="builder-inline-empty">No conditions</div>
+                    <div className="builder-inline-empty">Нет условий</div>
                   ) : state.conditions.map((condition, index) => {
                     const column = state.columns.find((candidate) => candidate.name === condition.column);
                     if (!column) return null;
@@ -171,11 +171,11 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
                     value={state.orderByColumn}
                     onChange={(event) => updateState({ ...state, orderByColumn: event.target.value })}
                   >
-                    <option value="">None</option>
+                    <option value="">Нет</option>
                     {state.columns.map((column) => <option key={column.name} value={column.name}>{column.name}</option>)}
                   </select>
                 </label>
-                <label>Direction
+                <label>Направление
                   <select
                     disabled={!state.orderByColumn}
                     value={state.orderDirection}
@@ -202,7 +202,7 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
                   className="generate-button"
                   disabled={state.columns.length === 0}
                   onClick={generateSql}
-                >Generate SQL</button>
+                >Сформировать SQL</button>
               </section>
               {validationError && <div className="builder-validation" role="alert">{validationError}</div>}
             </div>
@@ -212,7 +212,7 @@ export function QueryBuilder({ state, editorSql, onChange, onGeneratedSql }: Que
 
       {pendingSql && (
         <SqlReplaceConfirmation
-          sourceLabel="generated query"
+          sourceLabel="сформированным запросом"
           onCancel={() => setPendingSql(undefined)}
           onReplace={replaceSql}
         />
@@ -249,27 +249,27 @@ function ConditionRow({
   return (
     <div className="condition-row">
       <span className="condition-number">{index + 1}</span>
-      <select aria-label={`Condition ${index + 1} column`} value={column.name} onChange={(event) => onColumnChange(event.target.value)}>
+      <select aria-label={`Столбец условия ${index + 1}`} value={column.name} onChange={(event) => onColumnChange(event.target.value)}>
         {columns.map((candidate) => <option key={candidate.name} value={candidate.name}>{candidate.name}</option>)}
       </select>
-      <select aria-label={`Condition ${index + 1} operator`} value={operator} onChange={(event) => onOperatorChange(event.target.value as SqlOperator)}>
+      <select aria-label={`Оператор условия ${index + 1}`} value={operator} onChange={(event) => onOperatorChange(event.target.value as SqlOperator)}>
         {getAllowedOperators(column).map((allowedOperator) => <option key={allowedOperator} value={allowedOperator}>{allowedOperator}</option>)}
       </select>
       {needsValue && valueKind === 'boolean' ? (
-        <select aria-label={`Condition ${index + 1} value`} value={value} onChange={(event) => onValueChange(event.target.value)}>
+        <select aria-label={`Значение условия ${index + 1}`} value={value} onChange={(event) => onValueChange(event.target.value)}>
           <option value="TRUE">TRUE</option>
           <option value="FALSE">FALSE</option>
         </select>
       ) : needsValue ? (
         <input
-          aria-label={`Condition ${index + 1} value`}
+          aria-label={`Значение условия ${index + 1}`}
           inputMode={valueKind === 'numeric' ? 'decimal' : undefined}
-          placeholder="Literal value"
+          placeholder="Значение"
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
         />
-      ) : <span className="condition-no-value">No value</span>}
-      <button type="button" className="remove-condition" aria-label={`Remove condition ${index + 1}`} title="Remove" onClick={onRemove}>×</button>
+      ) : <span className="condition-no-value">Без значения</span>}
+      <button type="button" className="remove-condition" aria-label={`Удалить условие ${index + 1}`} title="Удалить" onClick={onRemove}>×</button>
     </div>
   );
 }

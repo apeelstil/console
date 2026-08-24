@@ -6,6 +6,7 @@ import type {
   ConnectionTestResult,
 } from '../../shared/postgresConnection';
 import { hasValidationErrors, validateProfileFields } from '../../shared/profileValidation';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import type { StoredConnectionProfile } from '../storage/connectionProfileRepository';
 import type { CredentialStorage } from '../storage/credentialStorage';
 import {
@@ -115,12 +116,12 @@ export class PostgresConnectionManager {
       }
       const client = this.activeClient;
       if (this.state.status !== 'CONNECTED' || !client) {
-        throw new ConnectionManagerError('No active database connection.');
+        throw new ConnectionManagerError('Нет активного подключения к базе данных.');
       }
 
       const result = await operation(client);
       if (this.state.status !== 'CONNECTED' || this.activeClient !== client) {
-        throw new ConnectionManagerError('No active database connection.');
+        throw new ConnectionManagerError('Нет активного подключения к базе данных.');
       }
       return result;
     } finally {
@@ -134,7 +135,7 @@ export class PostgresConnectionManager {
 
   async testConnection(request: ConnectionRequest): Promise<ConnectionTestResult> {
     this.assertOperationAllowed('test');
-    this.setState({ status: 'TESTING', message: 'Testing connection…' });
+    this.setState({ status: 'TESTING', message: 'Проверка подключения…' });
     const startedAt = Date.now();
     let client: PostgresClient | undefined;
 
@@ -145,9 +146,9 @@ export class PostgresConnectionManager {
       client.on('error', () => undefined);
       await client.connect();
       await client.query(HEALTH_CHECK_SQL);
-      if (this.shuttingDown) throw new ConnectionManagerError('The connection test was cancelled.');
+      if (this.shuttingDown) throw new ConnectionManagerError('Проверка подключения отменена.');
       const result: ConnectionTestResult = {
-        message: 'Connection successful',
+        message: USER_MESSAGES.connectionSuccessful,
         durationMs: Date.now() - startedAt,
       };
       this.setState({ status: 'DISCONNECTED', message: result.message });
@@ -176,7 +177,7 @@ export class PostgresConnectionManager {
       throw new ConnectionManagerError(safeMessage);
     }
 
-    this.setState({ status: 'CONNECTING', connection: resolved.metadata, message: 'Connecting…' });
+    this.setState({ status: 'CONNECTING', connection: resolved.metadata, message: 'Подключение…' });
     let client: PostgresClient;
     try {
       client = this.createClient(createClientConfig(resolved));
@@ -193,9 +194,9 @@ export class PostgresConnectionManager {
     try {
       await client.connect();
       if (this.activeClient !== client || this.shuttingDown) {
-        throw new ConnectionManagerError('The connection attempt was cancelled.');
+        throw new ConnectionManagerError('Попытка подключения отменена.');
       }
-      this.setState({ status: 'CONNECTED', connection: resolved.metadata, message: 'Connected' });
+      this.setState({ status: 'CONNECTED', connection: resolved.metadata, message: USER_MESSAGES.connected });
       return this.getConnectionState();
     } catch (error: unknown) {
       if (this.activeClient === client) this.activeClient = undefined;
@@ -222,7 +223,7 @@ export class PostgresConnectionManager {
       }
 
       if (this.activeClient === client) this.activeClient = undefined;
-      this.setState({ status: 'DISCONNECTING', connection: this.state.connection, message: 'Disconnecting…' });
+      this.setState({ status: 'DISCONNECTING', connection: this.state.connection, message: 'Отключение…' });
       await this.endClientOnce(client);
       this.setState({ status: 'DISCONNECTED' });
       return this.getConnectionState();
@@ -245,10 +246,10 @@ export class PostgresConnectionManager {
   private resolveConnection(request: ConnectionRequest): ResolvedConnection {
     if (request.source === 'profile') {
       const profile = this.profiles.findById(request.profileId);
-      if (!profile) throw new ConnectionManagerError('The selected connection profile no longer exists.');
+      if (!profile) throw new ConnectionManagerError('Выбранный профиль подключения больше не существует.');
 
       const password = request.temporaryPassword || this.decryptStoredPassword(profile);
-      if (!password) throw new ConnectionManagerError('Enter a password for this connection.');
+      if (!password) throw new ConnectionManagerError('Введите пароль для этого подключения.');
       return {
         metadata: toActiveConnectionInfo(profile),
         password,
@@ -257,9 +258,9 @@ export class PostgresConnectionManager {
 
     const validationErrors = validateProfileFields(request.connection);
     if (hasValidationErrors(validationErrors)) {
-      throw new ConnectionManagerError('Check the required connection fields and try again.');
+      throw new ConnectionManagerError('Проверьте обязательные поля подключения и повторите попытку.');
     }
-    if (!request.temporaryPassword) throw new ConnectionManagerError('Enter a password for this connection.');
+    if (!request.temporaryPassword) throw new ConnectionManagerError('Введите пароль для этого подключения.');
 
     return {
       metadata: normalizeConnectionInfo(request.connection),
@@ -270,13 +271,13 @@ export class PostgresConnectionManager {
   private decryptStoredPassword(profile: StoredConnectionProfile): string {
     if (!profile.encryptedPassword) return '';
     if (!this.credentials.isEncryptionAvailable()) {
-      throw new ConnectionManagerError('Windows credential encryption is unavailable. Enter the password manually.');
+      throw new ConnectionManagerError('Шифрование учётных данных Windows недоступно. Введите пароль вручную.');
     }
 
     try {
       return this.credentials.decrypt(profile.encryptedPassword);
     } catch {
-      throw new ConnectionManagerError('The stored password could not be decrypted. Enter the password manually.');
+      throw new ConnectionManagerError('Не удалось расшифровать сохранённый пароль. Введите пароль вручную.');
     }
   }
 
@@ -289,19 +290,21 @@ export class PostgresConnectionManager {
       }
       throw error;
     }
-    if (this.shuttingDown) throw new ConnectionManagerError('The application is shutting down.');
+    if (this.shuttingDown) throw new ConnectionManagerError('Приложение завершает работу.');
     if (this.state.status === 'CONNECTED' || this.state.status === 'DISCONNECTING') {
-      throw new ConnectionManagerError('Disconnect the active database before choosing another connection.');
+      throw new ConnectionManagerError('Отключитесь от активной базы данных перед выбором другого подключения.');
     }
     if (this.state.status === 'CONNECTING' || this.state.status === 'TESTING') {
-      throw new ConnectionManagerError(`A connection ${operation === 'test' ? 'operation' : 'attempt'} is already in progress.`);
+      throw new ConnectionManagerError(operation === 'test'
+        ? 'Операция с подключением уже выполняется.'
+        : 'Попытка подключения уже выполняется.');
     }
   }
 
   private handleUnexpectedLoss(client: PostgresClient, error?: Error): void {
     if (this.activeClient !== client) return;
     this.activeClient = undefined;
-    const message = error ? getSafeConnectionError(error) : 'The PostgreSQL connection was closed unexpectedly.';
+    const message = error ? getSafeConnectionError(error) : 'Подключение к PostgreSQL неожиданно закрыто.';
     this.setState({ status: 'ERROR', message });
     void this.endClientOnce(client);
   }
@@ -390,14 +393,14 @@ export function getSafeConnectionError(error: unknown): string {
   const message = typeof details.message === 'string' ? details.message.toLowerCase() : '';
 
   if (code === '28P01' || message.includes('password authentication failed')) {
-    return 'Authentication failed. Check the username and password.';
+    return USER_MESSAGES.authenticationFailed;
   }
-  if (code === '3D000') return 'The specified database does not exist.';
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'The database host could not be resolved.';
-  if (code === 'ECONNREFUSED') return 'The database server refused the connection.';
+  if (code === '3D000') return 'Указанная база данных не существует.';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'Не удалось определить адрес хоста базы данных.';
+  if (code === 'ECONNREFUSED') return 'Сервер базы данных отклонил подключение.';
   if (code === 'ETIMEDOUT' || code === 'CONNECT_TIMEOUT' || message.includes('timeout')) {
-    return 'The database server did not respond before the connection timeout.';
+    return 'Сервер базы данных не ответил за отведённое время.';
   }
-  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'The database server is unreachable.';
-  return 'PostgreSQL connection failed. Check the connection settings and server availability.';
+  if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') return 'Сервер базы данных недоступен.';
+  return 'Не удалось подключиться к PostgreSQL. Проверьте параметры подключения и доступность сервера.';
 }

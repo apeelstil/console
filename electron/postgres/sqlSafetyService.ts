@@ -23,8 +23,8 @@ export class SqlSafetyService {
   }
 
   async validateSelect(sql: string): Promise<SafeSelectQuery> {
-    if (!sql.trim()) throw notAllowed('Enter a SELECT query.');
-    if (sql.length > MAX_SQL_LENGTH) throw notAllowed('The SQL query is too large.');
+    if (!sql.trim()) throw notAllowed('Введите запрос SELECT.');
+    if (sql.length > MAX_SQL_LENGTH) throw notAllowed('SQL-запрос слишком большой.');
 
     let parsed: Awaited<ReturnType<typeof parse>>;
     try {
@@ -35,12 +35,12 @@ export class SqlSafetyService {
 
     const statements = parsed.stmts ?? [];
     if (statements.length !== 1) {
-      throw notAllowed('Exactly one SELECT statement is required.');
+      throw notAllowed('Разрешён ровно один запрос SELECT.');
     }
 
     const rawStatement = statements[0]?.stmt as unknown;
     if (!isRecord(rawStatement) || !isRecord(rawStatement.SelectStmt)) {
-      throw notAllowed('Only a SELECT statement is allowed.');
+      throw notAllowed('Разрешён только запрос SELECT.');
     }
 
     validateAst(rawStatement);
@@ -49,10 +49,10 @@ export class SqlSafetyService {
     try {
       normalizedSql = removeTrailingSemicolon((await deparse(parsed)).trim());
     } catch {
-      throw notAllowed('The SELECT query could not be safely prepared.');
+      throw notAllowed('Не удалось безопасно подготовить запрос SELECT.');
     }
 
-    if (!normalizedSql) throw notAllowed('Enter a SELECT query.');
+    if (!normalizedSql) throw notAllowed('Введите запрос SELECT.');
     return {
       normalizedSql,
       executableSql: [
@@ -79,7 +79,7 @@ function validateAst(value: unknown): void {
     if (nodeType === 'CommonTableExpr') validateCommonTableExpression(nodeValue);
 
     if (nodeType.endsWith('Stmt') && nodeType !== 'SelectStmt') {
-      throw notAllowed(`Statement type ${nodeType.slice(0, -4)} is not allowed.`);
+      throw notAllowed(`Тип запроса ${nodeType.slice(0, -4)} запрещён.`);
     }
 
     if (nodeType === 'SelectStmt') validateSelectNode(nodeValue);
@@ -89,32 +89,29 @@ function validateAst(value: unknown): void {
 
 function validateCommonTableExpression(value: unknown): void {
   if (!isRecord(value) || !isRecord(value.ctequery) || !isRecord(value.ctequery.SelectStmt)) {
-    throw notAllowed('Data-modifying CTEs are not allowed.');
+    throw notAllowed('CTE, изменяющие данные, запрещены.');
   }
 }
 
 function validateSelectNode(value: unknown): void {
-  if (!isRecord(value)) throw notAllowed('Invalid SELECT syntax tree.');
+  if (!isRecord(value)) throw notAllowed('Некорректное синтаксическое дерево SELECT.');
   validateSelectNodeRestrictions(value);
 }
 
 function validateSelectNodeRestrictions(value: Record<string, unknown>): void {
   if (value.intoClause !== undefined && value.intoClause !== null) {
-    throw notAllowed('SELECT INTO is not allowed.');
+    throw notAllowed('SELECT INTO запрещён.');
   }
   if (Array.isArray(value.lockingClause) && value.lockingClause.length > 0) {
-    throw notAllowed('SELECT locking clauses are not allowed.');
+    throw notAllowed('Блокирующие конструкции SELECT запрещены.');
   }
   if (Array.isArray(value.valuesLists) && value.valuesLists.length > 0) {
-    throw notAllowed('VALUES statements are not allowed; use SELECT.');
+    throw notAllowed('Конструкция VALUES запрещена; используйте SELECT.');
   }
 }
 
 function syntaxError(error: unknown): SqlSafetyError {
   const details = isRecord(error) && isRecord(error.sqlDetails) ? error.sqlDetails : {};
-  const message = typeof details.message === 'string'
-    ? limitMessage(details.message)
-    : 'The SQL query has invalid PostgreSQL syntax.';
   const cursorPosition = typeof details.cursorPosition === 'number'
     && Number.isSafeInteger(details.cursorPosition)
     && details.cursorPosition >= 0
@@ -122,7 +119,7 @@ function syntaxError(error: unknown): SqlSafetyError {
     : undefined;
   return new SqlSafetyError({
     kind: 'SYNTAX',
-    message,
+    message: 'Некорректный синтаксис PostgreSQL.',
     sqlState: '42601',
     ...(cursorPosition !== undefined ? { position: cursorPosition } : {}),
   });
@@ -134,11 +131,6 @@ function notAllowed(message: string): SqlSafetyError {
 
 function removeTrailingSemicolon(sql: string): string {
   return sql.endsWith(';') ? sql.slice(0, -1).trimEnd() : sql;
-}
-
-function limitMessage(message: string): string {
-  const singleLine = message.replaceAll('\r', ' ').replaceAll('\n', ' ').trim();
-  return singleLine.slice(0, 240) || 'The SQL query has invalid PostgreSQL syntax.';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

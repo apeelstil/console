@@ -8,6 +8,7 @@ import {
   type PasswordUpdate,
   type UpdateConnectionProfileInput,
 } from '../../shared/connectionProfiles';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import { ConnectionProfileService, ProfileServiceError } from '../storage/connectionProfileService';
 
 type ProfileServiceProvider = () => ConnectionProfileService | undefined;
@@ -36,11 +37,11 @@ function respond<T>(
 ): IpcResult<T> {
   try {
     const service = getService();
-    if (!service) return { ok: false, error: 'Local profile storage is unavailable.' };
+    if (!service) return { ok: false, error: USER_MESSAGES.localProfileStorageUnavailable };
     return { ok: true, data: operation(service) };
   } catch (error: unknown) {
     if (error instanceof ProfileServiceError) return { ok: false, error: error.safeMessage };
-    return { ok: false, error: 'The local profile operation could not be completed.' };
+    return { ok: false, error: 'Не удалось завершить операцию с локальным профилем.' };
   }
 }
 
@@ -111,5 +112,5 @@ function parseBoolean(value: unknown): boolean {
 }
 
 function invalidInput(): ProfileServiceError {
-  return new ProfileServiceError('Invalid connection profile data.');
+  return new ProfileServiceError('Некорректные данные профиля подключения.');
 }

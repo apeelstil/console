@@ -33,7 +33,7 @@ test('2: UPDATE with WHERE is allowed', async () => {
 });
 
 test('3: UPDATE without WHERE is blocked', async () => {
-  await assertBlocked("UPDATE public.orders SET status = 'DONE'", 'UPDATE requires a WHERE');
+  await assertBlocked("UPDATE public.orders SET status = 'DONE'", 'UPDATE без условия WHERE запрещён');
 });
 
 test('4: DELETE, MERGE, DDL, utility, and transaction commands are blocked', async () => {
@@ -48,21 +48,21 @@ test('4: DELETE, MERGE, DDL, utility, and transaction commands are blocked', asy
     'BEGIN',
     'COMMIT',
   ]) {
-    await assertBlocked(sql, 'Only INSERT or UPDATE');
+    await assertBlocked(sql, 'Разрешены только INSERT или UPDATE');
   }
 });
 
 test('5: multiple statements are blocked', async () => {
   await assertBlocked(
     'INSERT INTO public.orders(id) VALUES (1); UPDATE public.orders SET id = 2 WHERE id = 1;',
-    'Exactly one INSERT or UPDATE',
+    'Разрешён ровно один запрос INSERT или UPDATE',
   );
 });
 
 test('6: a data-modifying CTE is blocked', async () => {
   await assertBlocked(
     'WITH changed AS (UPDATE public.orders SET status = \'X\' WHERE id = 1 RETURNING id) INSERT INTO public.audit_ids(id) SELECT id FROM changed',
-    'Data-modifying CTEs',
+    'CTE, изменяющие данные',
   );
 });
 
@@ -88,10 +88,10 @@ test('9: system schema and unqualified mutation targets are blocked', async () =
     'UPDATE information_schema.tables SET table_name = \'x\' WHERE table_name = \'y\'',
     'INSERT INTO pg_temp_3.items(id) VALUES (1)',
   ]) {
-    await assertBlocked(sql, 'system schemas');
+    await assertBlocked(sql, 'системных схем PostgreSQL');
   }
-  await assertBlocked('INSERT INTO orders(id) VALUES (1)', 'explicit schema-qualified');
-  await assertBlocked('UPDATE orders SET status = \'X\' WHERE id = 1', 'explicit schema-qualified');
+  await assertBlocked('INSERT INTO orders(id) VALUES (1)', 'явно указать схему');
+  await assertBlocked('UPDATE orders SET status = \'X\' WHERE id = 1', 'явно указать схему');
 });
 
 async function assertBlocked(sql: string, messageFragment: string): Promise<void> {

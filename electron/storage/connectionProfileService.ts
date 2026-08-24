@@ -49,7 +49,7 @@ export class ConnectionProfileService {
 
   updateProfile(input: UpdateConnectionProfileInput): ConnectionProfile {
     const current = this.repository.findById(input.id);
-    if (!current) throw new ProfileServiceError('The selected connection profile no longer exists.');
+    if (!current) throw new ProfileServiceError('Выбранный профиль подключения больше не существует.');
 
     const fields = normalizeFields(input);
     assertValidFields(fields);
@@ -73,22 +73,22 @@ export class ConnectionProfileService {
 
   deleteProfile(id: string): void {
     if (!this.repository.delete(id)) {
-      throw new ProfileServiceError('The selected connection profile no longer exists.');
+      throw new ProfileServiceError('Выбранный профиль подключения больше не существует.');
     }
   }
 
   private encryptPassword(password: string): Buffer {
-    if (!password) throw new ProfileServiceError('Enter a password before enabling secure password saving.');
+    if (!password) throw new ProfileServiceError('Введите пароль перед включением безопасного сохранения.');
     if (!this.credentials.isEncryptionAvailable()) {
       throw new ProfileServiceError(
-        'Windows credential encryption is unavailable. The password was not saved. Disable secure password saving and try again.',
+        'Шифрование учётных данных Windows недоступно. Пароль не сохранён. Отключите безопасное сохранение и повторите попытку.',
       );
     }
 
     try {
       return this.credentials.encrypt(password);
     } catch {
-      throw new ProfileServiceError('The password could not be encrypted and was not saved.');
+      throw new ProfileServiceError('Не удалось зашифровать пароль; пароль не сохранён.');
     }
   }
 }
@@ -106,7 +106,7 @@ function normalizeFields(fields: ConnectionProfileFields): ConnectionProfileFiel
 
 function assertValidFields(fields: ConnectionProfileFields): void {
   if (hasValidationErrors(validateProfileFields(fields))) {
-    throw new ProfileServiceError('Check the required connection profile fields and try again.');
+    throw new ProfileServiceError('Проверьте обязательные поля профиля подключения и повторите попытку.');
   }
 }
 

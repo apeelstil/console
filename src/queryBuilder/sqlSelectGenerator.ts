@@ -69,7 +69,7 @@ export class QueryBuilderValidationError extends Error {
 }
 
 export function quotePostgresIdentifier(identifier: string): string {
-  if (!identifier) throw new QueryBuilderValidationError('Database identifiers must not be empty.');
+  if (!identifier) throw new QueryBuilderValidationError('Идентификаторы базы данных не могут быть пустыми.');
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
@@ -111,27 +111,27 @@ export function generateSelectSql(input: SelectQueryInput): string {
 
   for (const selectedColumn of selectedNames) {
     if (!columnsByName.has(selectedColumn)) {
-      throw new QueryBuilderValidationError(`Unknown selected column: ${selectedColumn}`);
+      throw new QueryBuilderValidationError(`Неизвестный выбранный столбец: ${selectedColumn}`);
     }
   }
 
   const orderedSelection = columns.filter((column) => selectedNames.has(column.name));
   if (orderedSelection.length === 0) {
-    throw new QueryBuilderValidationError('Select at least one column.');
+    throw new QueryBuilderValidationError('Выберите хотя бы один столбец.');
   }
 
   if (input.matchMode !== 'AND' && input.matchMode !== 'OR') {
-    throw new QueryBuilderValidationError('Invalid WHERE match mode.');
+    throw new QueryBuilderValidationError('Некорректный режим объединения условий WHERE.');
   }
 
   const whereLines = input.conditions.map((condition, index) => {
     const column = columnsByName.get(condition.column);
-    if (!column) throw new QueryBuilderValidationError(`Unknown WHERE column: ${condition.column}`);
+    if (!column) throw new QueryBuilderValidationError(`Неизвестный столбец WHERE: ${condition.column}`);
 
     const allowedOperators = getAllowedOperators(column);
     if (!allowedOperators.includes(condition.operator)) {
       throw new QueryBuilderValidationError(
-        `Operator ${condition.operator} is not allowed for column ${condition.column}.`,
+        `Оператор ${condition.operator} недоступен для столбца ${condition.column}.`,
       );
     }
 
@@ -153,10 +153,10 @@ export function generateSelectSql(input: SelectQueryInput): string {
 
   if (input.orderBy) {
     if (!columnsByName.has(input.orderBy.column)) {
-      throw new QueryBuilderValidationError(`Unknown ORDER BY column: ${input.orderBy.column}`);
+      throw new QueryBuilderValidationError(`Неизвестный столбец ORDER BY: ${input.orderBy.column}`);
     }
     if (input.orderBy.direction !== 'ASC' && input.orderBy.direction !== 'DESC') {
-      throw new QueryBuilderValidationError('Invalid ORDER BY direction.');
+      throw new QueryBuilderValidationError('Некорректное направление ORDER BY.');
     }
     sqlLines.push(
       `ORDER BY ${quotePostgresIdentifier(input.orderBy.column)} ${input.orderBy.direction}`,
@@ -169,7 +169,7 @@ export function generateSelectSql(input: SelectQueryInput): string {
 
 function validateObject(object: DatabaseObject): void {
   if (object.type !== 'TABLE' && object.type !== 'VIEW') {
-    throw new QueryBuilderValidationError('Only tables and views are supported.');
+    throw new QueryBuilderValidationError('Поддерживаются только таблицы и представления.');
   }
   quotePostgresIdentifier(object.schema);
   quotePostgresIdentifier(object.name);
@@ -183,7 +183,7 @@ function formatCondition(column: DatabaseColumn, condition: SelectWhereCondition
   if (kind === 'numeric') {
     if (!isStrictNumericLiteral(condition.value)) {
       throw new QueryBuilderValidationError(
-        `Enter a valid numeric value for column ${column.name}.`,
+        `Введите корректное числовое значение для столбца ${column.name}.`,
       );
     }
     return `${identifier} ${condition.operator} ${condition.value.trim()}`;
@@ -193,7 +193,7 @@ function formatCondition(column: DatabaseColumn, condition: SelectWhereCondition
     const booleanValue = condition.value.trim().toUpperCase();
     if (booleanValue !== 'TRUE' && booleanValue !== 'FALSE') {
       throw new QueryBuilderValidationError(
-        `Select TRUE or FALSE for column ${column.name}.`,
+        `Выберите TRUE или FALSE для столбца ${column.name}.`,
       );
     }
     return `${identifier} ${condition.operator} ${booleanValue}`;
@@ -205,11 +205,11 @@ function formatCondition(column: DatabaseColumn, condition: SelectWhereCondition
 function parseQueryLimit(value: string | number): number {
   const normalized = typeof value === 'number' ? String(value) : value.trim();
   if (!/^(?:0|[1-9]\d*)$/.test(normalized)) {
-    throw new QueryBuilderValidationError('LIMIT must be an integer from 1 to 10000.');
+    throw new QueryBuilderValidationError('LIMIT должен быть целым числом от 1 до 10000.');
   }
   const limit = Number(normalized);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000) {
-    throw new QueryBuilderValidationError('LIMIT must be an integer from 1 to 10000.');
+    throw new QueryBuilderValidationError('LIMIT должен быть целым числом от 1 до 10000.');
   }
   return limit;
 }

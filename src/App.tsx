@@ -126,7 +126,7 @@ export function App() {
   const editorLineCount = Math.max(1, sql.split('\n').length);
   const selectedDatabaseObject = queryBuilder.object
     ? `${queryBuilder.object.schema}.${queryBuilder.object.name}`
-    : 'No database object selected';
+    : 'Объект базы данных не выбран';
   const canExecute = connected && sql.trim().length > 0 && !executing && !postgresOperationsBlocked && !mutationBusy;
   const canSaveQuery = isSaveQueryAvailable(sql);
   const canExecuteChange = connected
@@ -168,7 +168,7 @@ export function App() {
   const completeSaveQuery = () => {
     setSaveQueryDialog({ status: 'closed' });
     setSavedQueriesRevision((revision) => revision + 1);
-    setSaveQueryFeedback('Query saved locally.');
+    setSaveQueryFeedback('Запрос сохранён локально.');
   };
 
   const executeSelect = async () => {
@@ -182,7 +182,7 @@ export function App() {
       if (!api) {
         setExecution({
           status: 'error',
-          error: { kind: 'EXECUTION', message: 'SELECT execution is unavailable.' },
+          error: { kind: 'EXECUTION', message: 'Выполнение SELECT недоступно.' },
         });
         setBottomTab('messages');
         return;
@@ -199,7 +199,7 @@ export function App() {
     } catch {
       setExecution({
         status: 'error',
-        error: { kind: 'EXECUTION', message: 'SELECT execution did not respond.' },
+        error: { kind: 'EXECUTION', message: 'Выполнение SELECT не отвечает.' },
       });
       setBottomTab('messages');
     } finally {
@@ -214,7 +214,7 @@ export function App() {
     if (!result) {
       setExecution({
         status: 'error',
-        error: { kind: 'EXECUTION', message: 'Query cancellation did not respond.' },
+        error: { kind: 'EXECUTION', message: 'Отмена запроса не отвечает.' },
       });
       setBottomTab('messages');
       return;
@@ -243,7 +243,7 @@ export function App() {
       }
       setMutationPreparation(result.data);
     } catch {
-      setExecution({ status: 'error', error: { kind: 'EXECUTION', message: 'Mutation validation did not respond.' } });
+      setExecution({ status: 'error', error: { kind: 'EXECUTION', message: 'Проверка INSERT/UPDATE не отвечает.' } });
       setBottomTab('messages');
     } finally {
       setMutationBusy(false);
@@ -264,7 +264,7 @@ export function App() {
       setMutationState(result.data);
       setMutationPreparation(undefined);
     } catch {
-      setMutationError('Mutation execution did not respond.');
+      setMutationError('Выполнение INSERT/UPDATE не отвечает.');
     } finally {
       setMutationBusy(false);
     }
@@ -286,7 +286,7 @@ export function App() {
       }
       setMutationState(result.data);
     } catch {
-      setMutationError(`The ${action} operation did not respond.`);
+      setMutationError(`Операция ${action} не отвечает.`);
     } finally {
       setMutationBusy(false);
       setMutationAction(undefined);
@@ -313,21 +313,21 @@ export function App() {
     <div className="app-shell">
       {displayedEnvironment && isProductionEnvironment(displayedEnvironment) && <div className="production-banner">PRODUCTION DATABASE</div>}
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">SQ</span><span className="brand-copy"><strong>SUPRA Query Console</strong><small>Database support workspace</small></span></div>
+        <div className="brand"><span className="brand-mark">SQ</span><span className="brand-copy"><strong>SUPRA Query Console</strong><small>Рабочее место поддержки БД</small></span></div>
         <nav className="top-actions">
-          <button type="button" className="toolbar-button" disabled={connected || disconnecting} onClick={() => setConnectionOpen(true)}>＋ Connection</button>
+          <button type="button" className="toolbar-button" disabled={connected || disconnecting} onClick={() => setConnectionOpen(true)}>＋ Подключение</button>
           {connected && activeConnection && <span className={`connection-summary ${activeConnection.environment === 'PROD' ? 'prod' : ''}`}><b>{activeConnection.name}</b><em>{activeConnection.environment}</em><span>{activeConnection.database}</span><span>{activeConnection.username}</span></span>}
-          {(connected || disconnecting) && <button type="button" className="disconnect-button" disabled={disconnecting || transactionBusy} title={transactionPending ? 'The pending transaction will be rolled back before disconnect.' : executing ? 'The running SELECT will be cancelled and rolled back before disconnect.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Disconnecting…' : 'Disconnect'}</button>}
+          {(connected || disconnecting) && <button type="button" className="disconnect-button" disabled={disconnecting || transactionBusy} title={transactionPending ? 'Незавершённая транзакция будет отменена перед отключением.' : executing ? 'Выполняющийся SELECT будет отменён перед отключением.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Отключение…' : 'Отключиться'}</button>}
           <span className={`status ${connectionState.status.toLowerCase()}`} role="status" aria-live="polite"><i />{formatConnectionStatus(connectionState.status)}</span>
         </nav>
       </header>
       {connectionState.status === 'ERROR' && connectionState.message && (
-        <div className="connection-alert" role="alert"><span>Connection error</span>{connectionState.message}</div>
+        <div className="connection-alert" role="alert"><span>Ошибка подключения</span>{connectionState.message}</div>
       )}
       {postgresOperationsBlocked && (
         <div className="uncommitted-banner" role="alert">
-          <strong>UNCOMMITTED TRANSACTION</strong>
-          <span>SELECT, metadata and other PostgreSQL operations are blocked until COMMIT or ROLLBACK.</span>
+          <strong>НЕЗАФИКСИРОВАННАЯ ТРАНЗАКЦИЯ</strong>
+          <span>SELECT, метаданные и другие операции PostgreSQL заблокированы до COMMIT или ROLLBACK.</span>
         </div>
       )}
       {!postgresOperationsBlocked && transactionMessage && (
@@ -341,21 +341,21 @@ export function App() {
             onSelectionChange={handleExplorerSelection}
           />
           <div className="side-nav">
-            <button type="button" className={section === 'workspace' ? 'active' : ''} onClick={() => setSection('workspace')}><i>⌨</i><span>SQL Workspace</span></button>
-            <button type="button" className={section === 'saved' ? 'active' : ''} onClick={() => setSection('saved')}><i>☆</i><span>Saved Queries</span></button>
-            <button type="button" className={section === 'history' ? 'active' : ''} onClick={() => setSection('history')}><i>◷</i><span>Query History</span></button>
-            <button type="button" className={section === 'audit' ? 'active' : ''} onClick={() => setSection('audit')}><i>≡</i><span>Audit Log</span></button>
+            <button type="button" className={section === 'workspace' ? 'active' : ''} onClick={() => setSection('workspace')}><i>⌨</i><span>SQL-редактор</span></button>
+            <button type="button" className={section === 'saved' ? 'active' : ''} onClick={() => setSection('saved')}><i>☆</i><span>Сохранённые запросы</span></button>
+            <button type="button" className={section === 'history' ? 'active' : ''} onClick={() => setSection('history')}><i>◷</i><span>История запросов</span></button>
+            <button type="button" className={section === 'audit' ? 'active' : ''} onClick={() => setSection('audit')}><i>≡</i><span>Журнал аудита</span></button>
           </div>
         </aside>
 
         <main className={`main-area ${section === 'workspace' ? 'workspace-layout' : 'data-layout'}`}>
           {section === 'workspace' ? <>
             <div className="workspace-header">
-              <div className="workspace-breadcrumb"><span>SQL Workspace</span><b>›</b><strong title={selectedDatabaseObject}>{selectedDatabaseObject}</strong></div>
+              <div className="workspace-breadcrumb"><span>SQL-редактор</span><b>›</b><strong title={selectedDatabaseObject}>{selectedDatabaseObject}</strong></div>
               <div className="workspace-badges">
-                <span className="safety-badge">READ-ONLY SELECT PATH</span>
+                <span className="safety-badge">БЕЗОПАСНЫЙ SELECT</span>
                 {queryOperation.status !== 'IDLE' && (
-                  <span className={`query-operation-status ${cancelling ? 'cancelling' : 'executing'}`} role="status" aria-live="polite"><i />{cancelling ? 'CANCELLING' : 'EXECUTING'}</span>
+                  <span className={`query-operation-status ${cancelling ? 'cancelling' : 'executing'}`} role="status" aria-live="polite"><i />{cancelling ? 'ОТМЕНА' : 'ВЫПОЛНЕНИЕ'}</span>
                 )}
               </div>
             </div>
@@ -368,21 +368,21 @@ export function App() {
             />
             <section className="editor panel">
               <div className="panel-heading">
-                <span>SQL Editor</span>
+                <span>SQL-редактор</span>
                 <div>
                   {saveQueryFeedback && <span className="editor-save-feedback" role="status">✓ {saveQueryFeedback}</span>}
-                  <span className="readonly-label">Ctrl+Enter to execute</span>
-                  <button type="button" className="save-query-button" disabled={!canSaveQuery} onClick={beginSaveQuery} title={canSaveQuery ? 'Save the current SQL Editor contents' : 'Write SQL before saving.'}>☆ Save query</button>
-                  <button type="button" className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button>
-                  <button type="button" disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>
-                  {executing && <button type="button" className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}
+                  <span className="readonly-label">Ctrl+Enter — выполнить</span>
+                  <button type="button" className="save-query-button" disabled={!canSaveQuery} onClick={beginSaveQuery} title={canSaveQuery ? 'Сохранить содержимое SQL-редактора' : 'Введите SQL перед сохранением.'}>☆ Сохранить запрос</button>
+                  <button type="button" className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Проверить INSERT/UPDATE и запросить подтверждение">Выполнить изменение</button>
+                  <button type="button" disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Выполнить проверенный SELECT (Ctrl+Enter)' : 'Сначала подключитесь к базе данных.'}>{executing ? 'Выполнение…' : '▶ Выполнить SELECT'}</button>
+                  {executing && <button type="button" className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Отмена…' : 'Отменить запрос'}</button>}
                 </div>
               </div>
-              <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Write one SELECT or generate it with Query Builder" onChange={(event) => { setSql(event.target.value); updateEditorPosition(event.target.value, event.target.selectionStart); }} onSelect={(event) => updateEditorPosition(event.currentTarget.value, event.currentTarget.selectionStart)} onKeyDown={handleEditorKeyDown} aria-label="SQL editor" /></div>
-              <div className="editor-status"><span>Ln {editorPosition.line}, Col {editorPosition.column}</span><span>SELECT read-only · changes require confirmation + COMMIT/ROLLBACK</span></div>
+              <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Введите один SELECT или создайте его в конструкторе" onChange={(event) => { setSql(event.target.value); updateEditorPosition(event.target.value, event.target.selectionStart); }} onSelect={(event) => updateEditorPosition(event.currentTarget.value, event.currentTarget.selectionStart)} onKeyDown={handleEditorKeyDown} aria-label="SQL-редактор" /></div>
+              <div className="editor-status"><span>Строка {editorPosition.line}, столбец {editorPosition.column}</span><span>SELECT — только чтение · изменения требуют подтверждения и COMMIT/ROLLBACK</span></div>
             </section>
             <section className="output panel">
-              <div className="tabs"><button type="button" className={bottomTab === 'results' ? 'active' : ''} onClick={() => setBottomTab('results')}>Results</button><button type="button" className={bottomTab === 'messages' ? 'active' : ''} onClick={() => setBottomTab('messages')}>Messages</button></div>
+              <div className="tabs"><button type="button" className={bottomTab === 'results' ? 'active' : ''} onClick={() => setBottomTab('results')}>Результаты</button><button type="button" className={bottomTab === 'messages' ? 'active' : ''} onClick={() => setBottomTab('messages')}>Сообщения</button></div>
               {transactionPending ? (
                 <PendingTransactionPanel
                   transaction={mutationState as PendingMutationTransaction}
@@ -394,20 +394,20 @@ export function App() {
               ) : bottomTab === 'results' ? (
                 execution.status === 'success'
                   ? <ResultsGrid result={execution.result} />
-                  : <div className="output-empty"><span>▦</span><strong>{cancelling ? 'Cancelling...' : executing ? 'Executing...' : 'Execute a query to see results'}</strong><small>{executing ? 'The query is running in a read-only transaction' : 'Query output will appear in this panel'}</small></div>
+                  : <div className="output-empty"><span>▦</span><strong>{cancelling ? 'Отмена запроса…' : executing ? 'Выполнение…' : 'Выполните запрос, чтобы увидеть результат'}</strong><small>{executing ? 'Запрос выполняется в транзакции только для чтения' : 'Результат запроса появится в этой области'}</small></div>
               ) : execution.status === 'error' ? (
                 <div className="execution-message" role="alert">
                   <span className="message-kind">{formatExecutionErrorKind(execution.error.kind)}</span>
                   <strong>{execution.error.message}</strong>
                   <div>
                     {execution.error.sqlState && <span>SQLSTATE {execution.error.sqlState}</span>}
-                    {execution.error.position !== undefined && <span>Position {execution.error.position}</span>}
+                    {execution.error.position !== undefined && <span>Позиция {execution.error.position}</span>}
                   </div>
                   {execution.error.storageWarnings?.map((warning) => (
                     <div className="storage-warning" role="alert" key={warning}>{warning}</div>
                   ))}
                 </div>
-              ) : <div className="output-empty"><span>ⓘ</span><strong>No messages</strong><small>Execution errors will appear here</small></div>}
+              ) : <div className="output-empty"><span>ⓘ</span><strong>Нет сообщений</strong><small>Ошибки выполнения появятся здесь</small></div>}
             </section>
           </> : section === 'saved' ? (
             <SavedQueriesView editorSql={sql} refreshVersion={savedQueriesRevision} onLoadSql={loadSqlIntoEditor} />
@@ -447,23 +447,23 @@ export function App() {
 
 function formatExecutionErrorKind(kind: QueryExecutionErrorDto['kind']): string {
   switch (kind) {
-    case 'SYNTAX': return 'Syntax error';
-    case 'NOT_ALLOWED': return 'Statement not allowed';
-    case 'TIMEOUT': return 'Query timeout';
-    case 'CANCELLED': return 'Query cancelled';
-    case 'PERMISSION_DENIED': return 'Permission denied';
-    case 'CONNECTION': return 'Connection error';
-    default: return 'Query execution error';
+    case 'SYNTAX': return 'Синтаксическая ошибка';
+    case 'NOT_ALLOWED': return 'Запрос запрещён';
+    case 'TIMEOUT': return 'Превышено время выполнения запроса';
+    case 'CANCELLED': return 'Запрос отменён';
+    case 'PERMISSION_DENIED': return 'Недостаточно прав';
+    case 'CONNECTION': return 'Ошибка подключения';
+    default: return 'Ошибка выполнения запроса';
   }
 }
 
 function formatConnectionStatus(status: ConnectionState['status']): string {
   switch (status) {
-    case 'TESTING': return 'TESTING';
-    case 'CONNECTING': return 'CONNECTING';
-    case 'CONNECTED': return 'CONNECTED';
-    case 'DISCONNECTING': return 'DISCONNECTING';
-    case 'ERROR': return 'CONNECTION ERROR';
-    default: return 'DISCONNECTED';
+    case 'TESTING': return 'ПРОВЕРКА';
+    case 'CONNECTING': return 'ПОДКЛЮЧЕНИЕ';
+    case 'CONNECTED': return 'ПОДКЛЮЧЕНО';
+    case 'DISCONNECTING': return 'ОТКЛЮЧЕНИЕ';
+    case 'ERROR': return 'ОШИБКА ПОДКЛЮЧЕНИЯ';
+    default: return 'ОТКЛЮЧЕНО';
   }
 }

@@ -225,7 +225,7 @@ test('17: a concurrent double Execute is blocked before a second transaction sta
   await assert.rejects(
     () => service.executeSelect('SELECT id FROM orders'),
     (error: unknown) => error instanceof QueryExecutionError
-      && error.details.message === 'A query is already executing.',
+      && error.details.message === 'Запрос уже выполняется.',
   );
   assert.equal(safety.calls, 1);
   assert.equal(client.requests.filter((request) => request === 'BEGIN READ ONLY;').length, 1);
@@ -289,8 +289,8 @@ test('19: successful cancellation sends one request, rolls back, and records CAN
   assert.equal(harness.runner.cancelCalls, 1);
   assert.equal(harness.client.requests.at(-1), 'ROLLBACK;');
   assert.equal(harness.activity.attempts.at(-1)?.status, 'CANCELLED');
-  assert.equal(harness.activity.attempts.at(-1)?.errorMessage, 'Query cancelled');
-  assert.deepEqual(harness.service.getState(), { status: 'IDLE', message: 'Query cancelled' });
+  assert.equal(harness.activity.attempts.at(-1)?.errorMessage, 'Запрос отменён');
+  assert.deepEqual(harness.service.getState(), { status: 'IDLE', message: 'Запрос отменён' });
 });
 
 test('20: the permanent connection remains usable after cancellation', async () => {
@@ -329,7 +329,7 @@ test('21: a double Cancel sends only one PostgreSQL cancellation request', async
   await assert.rejects(
     () => harness.service.cancelSelect(operation.operationId),
     (error: unknown) => error instanceof QueryOperationError
-      && error.safeMessage === 'Query cancellation is already in progress.',
+      && error.safeMessage === 'Отмена запроса уже выполняется.',
   );
   assert.equal(harness.runner.cancelCalls, 1);
   cancelRequest.resolve();
@@ -345,7 +345,7 @@ test('22: Cancel after SELECT completion is safely rejected', async () => {
   await assert.rejects(
     () => service.cancelSelect('00000000-0000-4000-8000-000000000000'),
     (error: unknown) => error instanceof QueryOperationError
-      && error.safeMessage === 'No matching SELECT query is executing.',
+      && error.safeMessage === 'Соответствующий запрос SELECT не выполняется.',
   );
 });
 

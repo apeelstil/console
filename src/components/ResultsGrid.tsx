@@ -8,12 +8,12 @@ export function ResultsGrid({ result }: ResultsGridProps) {
   return (
     <div className="results-grid">
       {result.storageWarnings?.map((warning) => (
-        <div className="storage-warning" role="alert" key={warning}>{warning} The SELECT result is still valid.</div>
+        <div className="storage-warning" role="alert" key={warning}>{warning} Результат SELECT остаётся корректным.</div>
       ))}
       <div className="results-summary">
-        <span>{result.returnedRows} {result.returnedRows === 1 ? 'row' : 'rows'}</span>
-        <span>{result.durationMs} ms</span>
-        {result.truncated && <strong>Showing first 1000 rows</strong>}
+        <span>Строк: {result.returnedRows}</span>
+        <span>{result.durationMs} мс</span>
+        {result.truncated && <strong>Показаны первые 1000 строк</strong>}
       </div>
       <div className="results-grid-scroll">
         <table>
@@ -21,7 +21,7 @@ export function ResultsGrid({ result }: ResultsGridProps) {
             <tr>
               <th className="row-index">#</th>
               {result.columns.map((column, index) => (
-                <th key={`${column.name}-${index}`} title={column.dataTypeId ? `PostgreSQL type OID ${column.dataTypeId}` : undefined}>
+                <th key={`${column.name}-${index}`} title={column.dataTypeId ? `OID типа PostgreSQL ${column.dataTypeId}` : undefined}>
                   <span>{column.name}</span>
                   {column.dataTypeId !== undefined && <small>{column.dataTypeId}</small>}
                 </th>
@@ -42,7 +42,7 @@ export function ResultsGrid({ result }: ResultsGridProps) {
             ))}
           </tbody>
         </table>
-        {result.rows.length === 0 && <div className="results-zero">Query returned no rows.</div>}
+        {result.rows.length === 0 && <div className="results-zero">Запрос не вернул строк.</div>}
       </div>
     </div>
   );

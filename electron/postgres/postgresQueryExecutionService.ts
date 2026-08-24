@@ -7,6 +7,7 @@ import type {
   SelectQueryResult,
 } from '../../shared/queryExecution';
 import type { ConnectionState } from '../../shared/postgresConnection';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import type {
   QueryActivityAttempt,
   QueryActivityRecorder,
@@ -87,7 +88,7 @@ class QueryCancelledBeforeDispatchError extends Error {}
 const standardSelectQueryRunner: SelectQueryRunner = {
   start: (client, config) => ({
     result: client.query(config),
-    requestCancel: () => Promise.reject(new Error('PostgreSQL cancellation is unavailable.')),
+    requestCancel: () => Promise.reject(new Error('Отмена запроса PostgreSQL недоступна.')),
   }),
 };
 
@@ -115,7 +116,7 @@ export class PostgresQueryExecutionService {
 
   async executeSelect(sql: string): Promise<SelectQueryResult> {
     if (this.activeExecution) {
-      throw await this.recordBlockedExecution(sql, 'A query is already executing.');
+      throw await this.recordBlockedExecution(sql, 'Запрос уже выполняется.');
     }
 
     const operationId = randomUUID();
@@ -124,7 +125,7 @@ export class PostgresQueryExecutionService {
     } catch (error: unknown) {
       const message = error instanceof PostgresOperationBlockedError
         ? error.safeMessage
-        : 'Another PostgreSQL operation is already in progress.';
+        : 'Другая операция PostgreSQL уже выполняется.';
       throw await this.recordBlockedExecution(sql, message);
     }
 
@@ -196,13 +197,13 @@ export class PostgresQueryExecutionService {
   async cancelSelect(operationId: string): Promise<QueryOperationState> {
     const activeExecution = this.activeExecution;
     if (!activeExecution || activeExecution.operationId !== operationId) {
-      throw new QueryOperationError('No matching SELECT query is executing.');
+      throw new QueryOperationError('Соответствующий запрос SELECT не выполняется.');
     }
     if (activeExecution.phase === 'CLEANUP') {
-      throw new QueryOperationError('The SELECT query has already finished; cleanup is in progress.');
+      throw new QueryOperationError('Запрос SELECT уже завершён; выполняется очистка.');
     }
     if (activeExecution.cancelRequested) {
-      throw new QueryOperationError('Query cancellation is already in progress.');
+      throw new QueryOperationError('Отмена запроса уже выполняется.');
     }
 
     activeExecution.cancelRequested = true;
@@ -227,7 +228,7 @@ export class PostgresQueryExecutionService {
           startedAt: activeExecution.startedAt,
         });
         throw new QueryOperationError(
-          'The cancellation request could not be sent. The query may still be running.',
+          'Не удалось отправить запрос отмены. Запрос может продолжать выполняться.',
         );
       }
     }
@@ -263,7 +264,7 @@ export class PostgresQueryExecutionService {
     try {
       return (await this.activityRecorder.recordAttempt(attempt)).warnings;
     } catch {
-      const warning = 'Query activity storage is unavailable.';
+      const warning = USER_MESSAGES.queryActivityStorageUnavailable;
       console.error(`[SUPRA] ${warning}`);
       return [warning];
     }
@@ -316,7 +317,7 @@ async function executeReadOnlyTransaction(
   }
 
   if (operationError !== undefined) throw operationError;
-  if (!result) throw new Error('Query returned no result.');
+  if (!result) throw new Error('Запрос не вернул результат.');
   return result;
 }
 
@@ -346,7 +347,7 @@ function getExecutionError(
     || (activeExecution.cancelRequestSent && getSqlState(error) === '57014')) {
     return {
       kind: 'CANCELLED',
-      message: 'Query cancelled',
+      message: USER_MESSAGES.queryCancelled,
       ...(getSqlState(error) ? { sqlState: getSqlState(error) } : {}),
     };
   }
@@ -359,9 +360,9 @@ function getSqlState(error: unknown): string | undefined {
 }
 
 function operationResolutionMessage(kind: QueryExecutionErrorDto['kind']): string | undefined {
-  if (kind === 'CANCELLED') return 'Query cancelled';
-  if (kind === 'TIMEOUT') return 'Query timed out';
-  if (kind === 'CONNECTION') return 'Disconnected';
+  if (kind === 'CANCELLED') return USER_MESSAGES.queryCancelled;
+  if (kind === 'TIMEOUT') return USER_MESSAGES.queryTimedOut;
+  if (kind === 'CONNECTION') return USER_MESSAGES.disconnected;
   return undefined;
 }
 
@@ -424,7 +425,7 @@ export function normalizeValue(value: unknown): QueryCellValue {
   }
   if (typeof value === 'bigint') return value.toString();
   if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? 'Invalid date' : value.toISOString();
+    return Number.isNaN(value.getTime()) ? 'Некорректная дата' : value.toISOString();
   }
   if (Buffer.isBuffer(value)) return `\\x${value.toString('hex')}`;
 
@@ -441,7 +442,7 @@ export function normalizeValue(value: unknown): QueryCellValue {
       });
       return serialized ?? String(value);
     } catch {
-      return 'Unserializable value';
+      return 'Значение невозможно сериализовать';
     }
   }
 
@@ -478,22 +479,22 @@ export function getSafeQueryError(error: unknown): QueryExecutionErrorDto {
     : undefined;
 
   if (code === '57014') {
-    return { kind: 'TIMEOUT', message: 'The query exceeded the 15 second timeout.', sqlState: code };
+    return { kind: 'TIMEOUT', message: USER_MESSAGES.queryTimedOut, sqlState: code };
   }
   if (code === '42501') {
-    return { kind: 'PERMISSION_DENIED', message: 'Permission denied while executing the SELECT query.', sqlState: code };
+    return { kind: 'PERMISSION_DENIED', message: 'Недостаточно прав для выполнения запроса SELECT.', sqlState: code };
   }
   if (code === '42601') {
     return {
       kind: 'SYNTAX',
-      message: 'The PostgreSQL server rejected the query syntax.',
+      message: 'Сервер PostgreSQL отклонил синтаксис запроса.',
       sqlState: code,
       ...(safePosition !== undefined ? { position: safePosition } : {}),
     };
   }
   return {
     kind: 'EXECUTION',
-    message: 'The SELECT query could not be executed.',
+    message: 'Не удалось выполнить запрос SELECT.',
     ...(code ? { sqlState: code } : {}),
   };
 }

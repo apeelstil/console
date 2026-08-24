@@ -189,17 +189,17 @@ test('13: LIMIT accepts inclusive boundaries and rejects non-integers or out-of-
 test('14: unknown SELECT, WHERE, and ORDER BY columns are rejected', () => {
   assert.throws(
     () => generateSelectSql(query({ selectedColumns: ['missing'] })),
-    /Unknown selected column/,
+    /Неизвестный выбранный столбец/,
   );
   assert.throws(
     () => generateSelectSql(query({
       conditions: [{ column: 'missing', operator: '=', value: 'x' }],
     })),
-    /Unknown WHERE column/,
+    /Неизвестный столбец WHERE/,
   );
   assert.throws(
     () => generateSelectSql(query({ orderBy: { column: 'missing', direction: 'ASC' } })),
-    /Unknown ORDER BY column/,
+    /Неизвестный столбец ORDER BY/,
   );
 });
 
@@ -207,11 +207,11 @@ test('15: an operator outside the allowlist for the metadata type is rejected', 
   assert.throws(() => generateSelectSql(query({
     selectedColumns: ['id'],
     conditions: [{ column: 'id', operator: 'ILIKE', value: '1' }],
-  })), /not allowed/);
+  })), /недоступен/);
   assert.throws(() => generateSelectSql(query({
     selectedColumns: ['external_id'],
     conditions: [{ column: 'external_id', operator: '>', value: 'a' }],
-  })), /not allowed/);
+  })), /недоступен/);
 });
 
 test('16: a VIEW is generated through the same validated SELECT path', () => {

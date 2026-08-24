@@ -1,6 +1,8 @@
 import type { IpcResult } from './connectionProfiles';
 import type { ActiveConnectionInfo } from './postgresConnection';
 
+export const MUTATION_CONFIRMATION_TIMEOUT_MS = 120_000;
+
 export type MutationOperation = 'INSERT' | 'UPDATE';
 export type MutationTransactionStatus =
   | 'IDLE'
@@ -31,6 +33,7 @@ export interface PendingMutationTransaction {
   target: MutationTarget;
   affectedRows: number;
   startedAt: string;
+  rollbackDeadlineAt: string;
   connection: ActiveConnectionInfo;
   storageWarnings?: string[];
 }

@@ -1,6 +1,6 @@
 export const PENDING_MUTATION_BLOCK_MESSAGE =
-  'An uncommitted mutation transaction is awaiting COMMIT or ROLLBACK.';
-export const ACTIVE_SELECT_BLOCK_MESSAGE = 'A SELECT query is currently executing.';
+  'Незафиксированная транзакция ожидает COMMIT или ROLLBACK.';
+export const ACTIVE_SELECT_BLOCK_MESSAGE = 'Выполняется запрос SELECT.';
 
 export class PostgresOperationBlockedError extends Error {
   constructor(public readonly safeMessage = PENDING_MUTATION_BLOCK_MESSAGE) {
@@ -30,7 +30,7 @@ export class PostgresOperationGate {
 
   assertMutationOwner(transactionId: string): void {
     if (this.mutationOwnerId !== transactionId) {
-      throw new PostgresOperationBlockedError('The mutation transaction is no longer active.');
+      throw new PostgresOperationBlockedError('Транзакция изменения больше не активна.');
     }
   }
 
@@ -50,7 +50,7 @@ export class PostgresOperationGate {
 
   assertSelectOwner(operationId: string): void {
     if (this.selectOwnerId !== operationId) {
-      throw new PostgresOperationBlockedError('The SELECT operation is no longer active.');
+      throw new PostgresOperationBlockedError('Операция SELECT больше не активна.');
     }
   }
 

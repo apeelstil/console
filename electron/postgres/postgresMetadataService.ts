@@ -164,10 +164,10 @@ export function getSafeMetadataError(error: unknown): string {
   const code = typeof details.code === 'string' ? details.code : '';
   const message = typeof details.message === 'string' ? details.message.toLowerCase() : '';
 
-  if (code === '42501') return 'Permission denied while loading database metadata.';
+  if (code === '42501') return 'Недостаточно прав для загрузки метаданных базы данных.';
   if (code === '57014' || code === 'QUERY_READ_TIMEOUT' || message.includes('query read timeout')) {
-    return 'The database metadata query timed out.';
+    return 'Превышено время загрузки метаданных базы данных.';
   }
-  if (code === '57P01' || code === 'ECONNRESET') return 'The database connection was interrupted while loading metadata.';
-  return 'Failed to load database metadata.';
+  if (code === '57P01' || code === 'ECONNRESET') return 'Подключение к базе данных прервано во время загрузки метаданных.';
+  return 'Не удалось загрузить метаданные базы данных.';
 }

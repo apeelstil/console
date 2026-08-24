@@ -43,7 +43,7 @@ test('an empty saved query name is rejected before calling the API', async () =>
     () => undefined,
   );
 
-  assert.deepEqual(result, { ok: false, error: 'Saved query name is required.' });
+  assert.deepEqual(result, { ok: false, error: 'Укажите название сохранённого запроса.' });
   assert.equal(createCalls, 0);
 });
 

@@ -16,9 +16,9 @@ interface DatabaseExplorerProps {
 }
 
 const unavailableMetadataApi: PostgresMetadataApi = {
-  listSchemas: async () => ({ ok: false, error: 'Database metadata browsing is unavailable.' }),
-  listSchemaObjects: async () => ({ ok: false, error: 'Database metadata browsing is unavailable.' }),
-  listColumns: async () => ({ ok: false, error: 'Database metadata browsing is unavailable.' }),
+  listSchemas: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
+  listSchemaObjects: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
+  listColumns: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
 };
 
 export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExplorerProps) {
@@ -48,22 +48,22 @@ export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExpl
   return (
     <div className="database-explorer">
       <div className="sidebar-title">
-        Database Explorer
+        Объекты базы данных
         <button
-          aria-label="Refresh database explorer"
-          title="Refresh"
+          aria-label="Обновить объекты базы данных"
+          title="Обновить"
           disabled={!connection || state.schemas.status === 'loading'}
           onClick={() => void controller.refresh()}
-        >↻ Refresh</button>
+        >↻ Обновить</button>
       </div>
-      <div className="explorer-tree" role="tree" aria-label="Database Explorer">
-        {!connection && <div className="empty-connection">No active connection</div>}
+      <div className="explorer-tree" role="tree" aria-label="Объекты базы данных">
+        {!connection && <div className="empty-connection">Нет активного подключения</div>}
         {connection && <>
           <TreeRow depth={0} expanded icon="database" label={connection.name} detail={connection.environment} />
-          <TreeRow depth={1} expanded icon="folder" label="Schemas" />
-          {state.schemas.status === 'loading' && <TreeMessage depth={2} message="Loading…" />}
-          {state.schemas.status === 'error' && <TreeError depth={2} message={state.schemas.error ?? 'Failed to load schemas.'} onRetry={() => void controller.retrySchemas()} />}
-          {state.schemas.status === 'loaded' && state.schemas.data.length === 0 && <TreeMessage depth={2} message="No user schemas" />}
+          <TreeRow depth={1} expanded icon="folder" label="Схемы" />
+          {state.schemas.status === 'loading' && <TreeMessage depth={2} message="Загрузка…" />}
+          {state.schemas.status === 'error' && <TreeError depth={2} message={state.schemas.error ?? 'Не удалось загрузить схемы.'} onRetry={() => void controller.retrySchemas()} />}
+          {state.schemas.status === 'loaded' && state.schemas.data.length === 0 && <TreeMessage depth={2} message="Нет пользовательских схем" />}
           {state.schemas.data.map((schema) => {
             const key = schemaCacheKey(schema.name);
             const expanded = state.expandedSchemas.includes(key);
@@ -71,8 +71,8 @@ export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExpl
             return <div key={key}>
               <TreeRow depth={2} expanded={expanded} icon="schema" label={schema.name} onClick={() => void controller.toggleSchema(schema.name)} />
               {expanded && <>
-                {objects?.status === 'loading' && <TreeMessage depth={3} message="Loading…" />}
-                {objects?.status === 'error' && <TreeError depth={3} message={objects.error ?? 'Failed to load tables and views.'} onRetry={() => void controller.retrySchema(schema.name)} />}
+                {objects?.status === 'loading' && <TreeMessage depth={3} message="Загрузка…" />}
+                {objects?.status === 'error' && <TreeError depth={3} message={objects.error ?? 'Не удалось загрузить таблицы и представления.'} onRetry={() => void controller.retrySchema(schema.name)} />}
                 {objects?.status === 'loaded' && <ObjectGroup type="TABLE" schema={schema.name} objects={objects.data} state={state} controller={controller} />}
                 {objects?.status === 'loaded' && <ObjectGroup type="VIEW" schema={schema.name} objects={objects.data} state={state} controller={controller} />}
               </>}
@@ -96,11 +96,11 @@ function ObjectGroup({ type, schema, objects, state, controller }: ObjectGroupPr
   const key = groupCacheKey(schema, type);
   const expanded = state.expandedGroups.includes(key);
   const matchingObjects = objects.filter((object) => object.type === type);
-  const label = type === 'TABLE' ? 'Tables' : 'Views';
+  const label = type === 'TABLE' ? 'Таблицы' : 'Представления';
 
   return <div>
     <TreeRow depth={3} expanded={expanded} icon="folder" label={label} detail={String(matchingObjects.length)} onClick={() => controller.toggleGroup(schema, type)} />
-    {expanded && matchingObjects.length === 0 && <TreeMessage depth={4} message={`No ${label.toLowerCase()}`} />}
+    {expanded && matchingObjects.length === 0 && <TreeMessage depth={4} message={`Нет: ${label.toLowerCase()}`} />}
     {expanded && matchingObjects.map((object) => {
       const objectKey = objectCacheKey(object.schema, object.name);
       const columns = state.columnsByObject[objectKey];
@@ -124,9 +124,9 @@ interface ColumnRowsProps {
 }
 
 function ColumnRows({ object, columns, onRetry }: ColumnRowsProps) {
-  if (!columns || columns.status === 'loading') return <TreeMessage depth={5} message="Loading…" />;
-  if (columns.status === 'error') return <TreeError depth={5} message={columns.error ?? 'Failed to load columns.'} onRetry={onRetry} />;
-  if (columns.data.length === 0) return <TreeMessage depth={5} message="No columns" />;
+  if (!columns || columns.status === 'loading') return <TreeMessage depth={5} message="Загрузка…" />;
+  if (columns.status === 'error') return <TreeError depth={5} message={columns.error ?? 'Не удалось загрузить столбцы.'} onRetry={onRetry} />;
+  if (columns.data.length === 0) return <TreeMessage depth={5} message="Нет столбцов" />;
 
   return <>{columns.data.map((column) => (
     <div className="column-row" style={{ paddingLeft: 70 }} key={`${object.schema}.${object.name}.${column.name}`}>
@@ -170,7 +170,7 @@ function TreeMessage({ depth, message }: { depth: number; message: string }) {
 }
 
 function TreeError({ depth, message, onRetry }: { depth: number; message: string; onRetry: () => void }) {
-  return <div className="tree-error" role="status" style={{ paddingLeft: 23 + depth * 14 }}><span title={message}>{message}</span><button type="button" onClick={onRetry}>Retry</button></div>;
+  return <div className="tree-error" role="status" style={{ paddingLeft: 23 + depth * 14 }}><span title={message}>{message}</span><button type="button" onClick={onRetry}>Повторить</button></div>;
 }
 
 function iconGlyph(icon: TreeRowProps['icon']): string {

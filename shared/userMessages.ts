@@ -1,0 +1,16 @@
+export const USER_MESSAGES = {
+  connectionSuccessful: 'Подключение успешно',
+  connected: 'Подключено',
+  disconnected: 'Отключено',
+  authenticationFailed: 'Ошибка авторизации. Проверьте логин и пароль.',
+  statementNotAllowed: 'Запрос запрещён',
+  updateRequiresWhere: 'UPDATE без условия WHERE запрещён.',
+  queryCancelled: 'Запрос отменён',
+  queryTimedOut: 'Превышено время выполнения запроса',
+  queryExecutionUnavailable: 'Выполнение SELECT недоступно.',
+  databaseConnectionUnavailable: 'Управление подключением к PostgreSQL недоступно.',
+  savedQueryStorageUnavailable: 'Хранилище сохранённых запросов недоступно.',
+  localProfileStorageUnavailable: 'Локальное хранилище профилей недоступно.',
+  auditStorageUnavailable: 'Хранилище журнала аудита недоступно.',
+  queryActivityStorageUnavailable: 'Хранилище истории запросов недоступно.',
+} as const;

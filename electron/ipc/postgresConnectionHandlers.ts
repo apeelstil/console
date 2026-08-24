@@ -8,6 +8,7 @@ import {
   POSTGRES_CONNECTION_CHANNELS,
   type ConnectionRequest,
 } from '../../shared/postgresConnection';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import {
   ConnectionManagerError,
   type PostgresConnectionManager,
@@ -35,11 +36,11 @@ async function respond<T>(
 ): Promise<IpcResult<T>> {
   try {
     const manager = getManager();
-    if (!manager) return { ok: false, error: 'PostgreSQL connection management is unavailable.' };
+    if (!manager) return { ok: false, error: USER_MESSAGES.databaseConnectionUnavailable };
     return { ok: true, data: await operation(manager) };
   } catch (error: unknown) {
     if (error instanceof ConnectionManagerError) return { ok: false, error: error.safeMessage };
-    return { ok: false, error: 'The PostgreSQL connection operation could not be completed.' };
+    return { ok: false, error: 'Не удалось завершить операцию подключения к PostgreSQL.' };
   }
 }
 
@@ -100,5 +101,5 @@ function parseId(value: unknown): string {
 }
 
 function invalidInput(): ConnectionManagerError {
-  return new ConnectionManagerError('Invalid PostgreSQL connection data.');
+  return new ConnectionManagerError('Некорректные данные подключения к PostgreSQL.');
 }

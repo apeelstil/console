@@ -144,7 +144,7 @@ test('secure password saving fails closed when encryption is unavailable', () =>
 
   assert.throws(
     () => service.createProfile({ ...testFields, password: 'must-not-be-stored', savePasswordSecurely: true }),
-    (error: unknown) => error instanceof ProfileServiceError && error.safeMessage.includes('unavailable'),
+    (error: unknown) => error instanceof ProfileServiceError && error.safeMessage.includes('недоступно'),
   );
   assert.equal(service.listProfiles().length, 0);
   database.close();

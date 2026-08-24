@@ -40,7 +40,7 @@ class FakeActiveClientProvider implements ActiveClientProvider {
   constructor(readonly client: FakeMetadataClient) {}
 
   async withActiveClient<T>(operation: (client: PostgresClient) => Promise<T>): Promise<T> {
-    if (!this.connected) throw new ConnectionManagerError('No active database connection.');
+    if (!this.connected) throw new ConnectionManagerError('Нет активного подключения к базе данных.');
     return operation(this.client);
   }
 }
@@ -122,7 +122,7 @@ test('Scenario E: a metadata request without an active connection returns a safe
   await assert.rejects(
     () => service.listSchemas(),
     (error: unknown) => error instanceof MetadataServiceError
-      && error.safeMessage === 'No active database connection.',
+      && error.safeMessage === 'Нет активного подключения к базе данных.',
   );
 });
 
@@ -133,7 +133,7 @@ test('Scenario F: a permission error is safe and does not disconnect the active 
   await assert.rejects(
     () => service.listSchemas(),
     (error: unknown) => error instanceof MetadataServiceError
-      && error.safeMessage === 'Permission denied while loading database metadata.'
+      && error.safeMessage === 'Недостаточно прав для загрузки метаданных базы данных.'
       && !error.safeMessage.includes('restricted relation'),
   );
   assert.equal(provider.connected, true);

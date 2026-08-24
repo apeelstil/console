@@ -1,5 +1,6 @@
 import { deparse, loadModule, parse } from 'pgsql-parser';
 import type { MutationOperation, MutationTarget } from '../../shared/mutationTransaction';
+import { USER_MESSAGES } from '../../shared/userMessages';
 
 const MAX_SQL_LENGTH = 1_000_000;
 
@@ -28,23 +29,23 @@ export class MutationSafetyService {
   }
 
   async validateMutation(sql: string): Promise<SafeMutationQuery> {
-    if (!sql.trim()) throw blocked('Enter one INSERT or UPDATE statement.');
-    if (sql.length > MAX_SQL_LENGTH) throw blocked('The SQL statement is too large.');
+    if (!sql.trim()) throw blocked('Введите один запрос INSERT или UPDATE.');
+    if (sql.length > MAX_SQL_LENGTH) throw blocked('SQL-запрос слишком большой.');
 
     let parsed: Awaited<ReturnType<typeof parse>>;
     try {
       parsed = await parse(sql);
     } catch {
-      throw blocked('The mutation SQL syntax could not be parsed safely.');
+      throw blocked('Не удалось безопасно разобрать синтаксис запроса изменения.');
     }
 
     const statements = parsed.stmts ?? [];
     if (statements.length !== 1) {
-      throw blocked('Exactly one INSERT or UPDATE statement is required.');
+      throw blocked('Разрешён ровно один запрос INSERT или UPDATE.');
     }
 
     const root = statements[0]?.stmt as unknown;
-    if (!isRecord(root)) throw blocked('Only INSERT or UPDATE is allowed.');
+    if (!isRecord(root)) throw blocked('Разрешены только INSERT или UPDATE.');
 
     let operation: MutationOperation;
     let statement: Record<string, unknown>;
@@ -55,24 +56,24 @@ export class MutationSafetyService {
       operation = 'UPDATE';
       statement = root.UpdateStmt;
     } else {
-      throw blocked('Only INSERT or UPDATE is allowed.');
+      throw blocked('Разрешены только INSERT или UPDATE.');
     }
 
     const target = readTarget(statement, operation);
     if (containsModifyingCte(statement)) {
-      throw blocked('Data-modifying CTEs are not allowed.', operation, target);
+      throw blocked('CTE, изменяющие данные, запрещены.', operation, target);
     }
     if (hasReturningClause(statement)) {
-      throw blocked('RETURNING is not allowed for mutations at this stage.', operation, target);
+      throw blocked('RETURNING для изменений на этом этапе запрещён.', operation, target);
     }
 
     if (operation === 'UPDATE' && !isRecord(statement.whereClause)) {
-      throw blocked('UPDATE requires a WHERE clause.', operation, target);
+      throw blocked(USER_MESSAGES.updateRequiresWhere, operation, target);
     }
     if (operation === 'INSERT') {
       const conflict = statement.onConflictClause;
       if (isRecord(conflict) && conflict.action === 'ONCONFLICT_UPDATE') {
-        throw blocked('ON CONFLICT DO UPDATE is not allowed.', operation, target);
+        throw blocked('ON CONFLICT DO UPDATE запрещён.', operation, target);
       }
     }
 
@@ -80,9 +81,9 @@ export class MutationSafetyService {
     try {
       normalizedSql = removeTrailingSemicolon((await deparse(parsed)).trim());
     } catch {
-      throw blocked('The mutation could not be safely prepared.', operation, target);
+      throw blocked('Не удалось безопасно подготовить запрос изменения.', operation, target);
     }
-    if (!normalizedSql) throw blocked('Enter one INSERT or UPDATE statement.', operation, target);
+    if (!normalizedSql) throw blocked('Введите один запрос INSERT или UPDATE.', operation, target);
 
     return { operation, target, normalizedSql };
   }
@@ -91,10 +92,10 @@ export class MutationSafetyService {
 function readTarget(statement: Record<string, unknown>, operation: MutationOperation): MutationTarget {
   const relation = statement.relation;
   if (!isRecord(relation) || typeof relation.relname !== 'string' || !relation.relname) {
-    throw blocked('The mutation target could not be identified.', operation);
+    throw blocked('Не удалось определить объект изменения.', operation);
   }
   if (typeof relation.schemaname !== 'string' || !relation.schemaname) {
-    throw blocked('INSERT and UPDATE require an explicit schema-qualified target.', operation);
+    throw blocked('Для INSERT и UPDATE требуется явно указать схему объекта.', operation);
   }
 
   const schema = relation.schemaname;
@@ -103,7 +104,7 @@ function readTarget(statement: Record<string, unknown>, operation: MutationOpera
   if (normalizedSchema === 'pg_catalog'
     || normalizedSchema === 'information_schema'
     || normalizedSchema.startsWith('pg_')) {
-    throw blocked('Mutations against PostgreSQL system schemas are not allowed.', operation, target);
+    throw blocked('Изменения системных схем PostgreSQL запрещены.', operation, target);
   }
   return target;
 }

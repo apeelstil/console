@@ -31,11 +31,11 @@ export async function saveEditorQuery(
   onSaved: (query: SavedQuery) => void,
 ): Promise<IpcResult<SavedQuery>> {
   if (dialog.status !== 'open' || !isSaveQueryAvailable(dialog.sqlText)) {
-    return { ok: false, error: 'SQL cannot be empty.' };
+    return { ok: false, error: 'SQL не может быть пустым.' };
   }
 
   const name = form.name.trim();
-  if (!name) return { ok: false, error: 'Saved query name is required.' };
+  if (!name) return { ok: false, error: 'Укажите название сохранённого запроса.' };
 
   const result = await api.createSavedQuery({
     name,

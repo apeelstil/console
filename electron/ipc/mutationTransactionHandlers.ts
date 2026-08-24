@@ -32,22 +32,22 @@ async function respond<T extends PreparedMutation | PendingMutationTransaction |
 ): Promise<IpcResult<T>> {
   try {
     const manager = getManager();
-    if (!manager) return { ok: false, error: 'Mutation transaction management is unavailable.' };
+    if (!manager) return { ok: false, error: 'Управление транзакциями изменений недоступно.' };
     return { ok: true, data: await operation(manager) };
   } catch (error: unknown) {
     if (error instanceof MutationTransactionError) return { ok: false, error: error.safeMessage };
-    return { ok: false, error: 'The mutation transaction operation could not be completed.' };
+    return { ok: false, error: 'Не удалось завершить операцию с транзакцией изменения.' };
   }
 }
 
 function parseSql(value: unknown): string {
-  if (typeof value !== 'string') throw new MutationTransactionError('Mutation SQL must be a string.');
+  if (typeof value !== 'string') throw new MutationTransactionError('SQL изменения должен быть строкой.');
   return value;
 }
 
 function parseId(value: unknown): string {
   if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
-    throw new MutationTransactionError('Invalid mutation transaction identifier.');
+    throw new MutationTransactionError('Некорректный идентификатор транзакции изменения.');
   }
   return value;
 }

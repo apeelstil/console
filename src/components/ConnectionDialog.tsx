@@ -9,7 +9,9 @@ import {
 } from '../../shared/connectionProfiles';
 import type { ConnectionRequest, ConnectionState } from '../../shared/postgresConnection';
 import { hasValidationErrors, validateProfileFields, type ProfileFieldErrors } from '../../shared/profileValidation';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import type { ConnectionDraft } from '../types/connection';
+import { PasswordInput } from './PasswordInput';
 
 interface ConnectionDialogProps {
   onClose: () => void;
@@ -55,7 +57,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     const load = async () => {
       if (!window.supraDesktop) {
         if (active) {
-          setNotice({ kind: 'error', message: 'Desktop profile storage is available only inside Electron.' });
+          setNotice({ kind: 'error', message: 'Хранилище профилей доступно только в Electron-приложении.' });
           setLoading(false);
         }
         return;
@@ -67,7 +69,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
         if (result.ok) setProfiles(result.data);
         else setNotice({ kind: 'error', message: result.error });
       } catch {
-        if (active) setNotice({ kind: 'error', message: 'Local profile storage did not respond.' });
+        if (active) setNotice({ kind: 'error', message: 'Локальное хранилище профилей не отвечает.' });
       } finally {
         if (active) setLoading(false);
       }
@@ -119,7 +121,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     setNotice(null);
 
     if (!connection.saveProfile) {
-      setNotice({ kind: 'info', message: 'Enable “Save profile” to write this connection profile to local storage.' });
+      setNotice({ kind: 'info', message: 'Включите «Сохранить профиль», чтобы записать параметры подключения локально.' });
       return;
     }
 
@@ -127,14 +129,14 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     const nextErrors = validateProfileFields(fields);
     const hasExistingPassword = selectedProfile?.hasStoredPassword === true && !removeStoredPassword;
     if (connection.savePasswordSecurely && !connection.password && !hasExistingPassword) {
-      nextErrors.password = 'Enter a password to save it securely.';
+      nextErrors.password = 'Введите пароль для безопасного сохранения.';
     }
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
 
     const api = window.supraDesktop;
     if (!api) {
-      setNotice({ kind: 'error', message: 'Desktop profile storage is unavailable.' });
+      setNotice({ kind: 'error', message: USER_MESSAGES.localProfileStorageUnavailable });
       return;
     }
 
@@ -163,9 +165,9 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
         savedProfile,
       ]));
       selectProfile(savedProfile);
-      setNotice({ kind: 'success', message: selectedProfile ? 'Connection profile updated.' : 'Connection profile saved.' });
+      setNotice({ kind: 'success', message: selectedProfile ? 'Профиль подключения обновлён.' : 'Профиль подключения сохранён.' });
     } catch {
-      setNotice({ kind: 'error', message: 'Local profile storage did not respond.' });
+      setNotice({ kind: 'error', message: 'Локальное хранилище профилей не отвечает.' });
     } finally {
       setSaving(false);
     }
@@ -178,7 +180,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     try {
       result = await window.supraDesktop.deleteProfile(selectedProfile.id);
     } catch {
-      setNotice({ kind: 'error', message: 'Local profile storage did not respond.' });
+      setNotice({ kind: 'error', message: 'Локальное хранилище профилей не отвечает.' });
       setConfirmingDelete(false);
       setSaving(false);
       return;
@@ -193,7 +195,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
 
     setProfiles((current) => current.filter((profile) => profile.id !== selectedProfile.id));
     startNewProfile();
-    setNotice({ kind: 'success', message: 'Connection profile and its stored password were deleted.' });
+    setNotice({ kind: 'success', message: 'Профиль подключения и сохранённый пароль удалены.' });
   };
 
   const runConnectionAction = async (action: 'testing' | 'connecting') => {
@@ -202,25 +204,25 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     const nextErrors = validateProfileFields(fields);
     const canUseStoredPassword = selectedProfile?.hasStoredPassword === true && !removeStoredPassword;
     if (!connection.password && !canUseStoredPassword) {
-      nextErrors.password = 'Enter a password for this connection.';
+      nextErrors.password = 'Введите пароль для этого подключения.';
     }
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
 
     const api = window.supraDesktop;
     if (!api) {
-      setNotice({ kind: 'error', message: 'PostgreSQL connection management is unavailable.' });
+      setNotice({ kind: 'error', message: USER_MESSAGES.databaseConnectionUnavailable });
       return;
     }
 
     const request = toConnectionRequest(connection, selectedProfile);
     setConnectionAction(action);
-    setNotice({ kind: 'info', message: action === 'testing' ? 'Testing…' : 'Connecting…' });
+    setNotice({ kind: 'info', message: action === 'testing' ? 'Проверка…' : 'Подключение…' });
     try {
       if (action === 'testing') {
         const result = await api.testConnection(request);
         if (result.ok) {
-          setNotice({ kind: 'success', message: `${result.data.message} (${result.data.durationMs} ms)` });
+          setNotice({ kind: 'success', message: `${result.data.message} (${result.data.durationMs} мс)` });
         } else {
           setNotice({ kind: 'error', message: result.error });
         }
@@ -233,10 +235,10 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
         return;
       }
       setConnection((current) => ({ ...current, password: '' }));
-      setNotice({ kind: 'success', message: 'Connected' });
+      setNotice({ kind: 'success', message: USER_MESSAGES.connected });
       onConnected();
     } catch {
-      setNotice({ kind: 'error', message: 'The PostgreSQL connection operation did not respond.' });
+      setNotice({ kind: 'error', message: 'Операция подключения к PostgreSQL не отвечает.' });
     } finally {
       setConnectionAction(null);
     }
@@ -250,16 +252,16 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     <div className="modal-backdrop" role="presentation">
       <div className="connection-dialog" role="dialog" aria-modal="true" aria-labelledby="connection-title">
         <div className="dialog-header">
-          <div><h2 id="connection-title">Connection Profiles</h2><p>Local PostgreSQL profile settings</p></div>
-          <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
+          <div><h2 id="connection-title">Профили подключений</h2><p>Локальные параметры PostgreSQL</p></div>
+          <button type="button" className="close" onClick={onClose} aria-label="Закрыть">×</button>
         </div>
 
         <div className="connection-content">
           <aside className="profiles-pane">
-            <div className="profiles-heading"><strong>Saved connections</strong><button type="button" onClick={startNewProfile}>＋</button></div>
+            <div className="profiles-heading"><strong>Сохранённые подключения</strong><button type="button" onClick={startNewProfile} aria-label="Новый профиль">＋</button></div>
             <div className="profiles-list">
-              {loading && <p className="profile-empty">Loading profiles…</p>}
-              {!loading && profiles.length === 0 && <p className="profile-empty">No saved connections</p>}
+              {loading && <p className="profile-empty">Загрузка профилей…</p>}
+              {!loading && profiles.length === 0 && <p className="profile-empty">Нет сохранённых подключений</p>}
               {profiles.map((profile) => (
                 <button
                   type="button"
@@ -269,69 +271,69 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
                 >
                   <span className={`environment-badge ${profile.environment.toLowerCase()}`}>{profile.environment}</span>
                   <span className="profile-summary"><strong>{profile.name}</strong><small>{profile.host}:{profile.port}</small></span>
-                  {profile.hasStoredPassword && <span className="profile-lock" title="Password stored securely">●</span>}
+                  {profile.hasStoredPassword && <span className="profile-lock" title="Пароль сохранён безопасно">●</span>}
                 </button>
               ))}
             </div>
-            <button type="button" className="new-profile" onClick={startNewProfile}>New profile</button>
+            <button type="button" className="new-profile" onClick={startNewProfile}>Новый профиль</button>
           </aside>
 
           <form onSubmit={saveProfile} className="profile-form">
             <div className="form-caption">
-              <strong>{selectedProfile ? 'Edit connection' : 'New connection'}</strong>
-              {selectedProfile && <small>Saved {formatDate(selectedProfile.updatedAt)}</small>}
+              <strong>{selectedProfile ? 'Изменить подключение' : 'Новое подключение'}</strong>
+              {selectedProfile && <small>Сохранено {formatDate(selectedProfile.updatedAt)}</small>}
             </div>
             <div className="form-grid">
-              <Field label="Connection name" error={errors.name} className="full">
-                <input value={connection.name} onChange={(event) => update('name', event.target.value)} aria-invalid={Boolean(errors.name)} placeholder="My database" />
+              <Field label="Название подключения" error={errors.name} className="full">
+                <input value={connection.name} onChange={(event) => update('name', event.target.value)} aria-invalid={Boolean(errors.name)} placeholder="Моя база данных" />
               </Field>
-              <Field label="Environment" error={errors.environment} className="environment full">
+              <Field label="Среда" error={errors.environment} className="environment full">
                 <select value={connection.environment} onChange={(event) => update('environment', event.target.value as ConnectionEnvironment)}>
                   {CONNECTION_ENVIRONMENTS.map((environment) => <option key={environment}>{environment}</option>)}
                 </select>
               </Field>
-              <Field label="Host" error={errors.host} className="host">
-                <input value={connection.host} onChange={(event) => update('host', event.target.value)} aria-invalid={Boolean(errors.host)} placeholder="Hostname" />
+              <Field label="Хост" error={errors.host} className="host">
+                <input value={connection.host} onChange={(event) => update('host', event.target.value)} aria-invalid={Boolean(errors.host)} placeholder="Имя хоста" />
               </Field>
-              <Field label="Port" error={errors.port}>
+              <Field label="Порт" error={errors.port}>
                 <input value={connection.port} inputMode="numeric" onChange={(event) => update('port', event.target.value)} aria-invalid={Boolean(errors.port)} />
               </Field>
-              <Field label="Database" error={errors.database} className="full">
-                <input value={connection.database} onChange={(event) => update('database', event.target.value)} aria-invalid={Boolean(errors.database)} placeholder="Database name" />
+              <Field label="База данных" error={errors.database} className="full">
+                <input value={connection.database} onChange={(event) => update('database', event.target.value)} aria-invalid={Boolean(errors.database)} placeholder="Название базы данных" />
               </Field>
-              <Field label="Username" error={errors.username} className="full">
-                <input value={connection.username} onChange={(event) => update('username', event.target.value)} aria-invalid={Boolean(errors.username)} autoComplete="off" placeholder="Username" />
+              <Field label="Пользователь" error={errors.username} className="full">
+                <input value={connection.username} onChange={(event) => update('username', event.target.value)} aria-invalid={Boolean(errors.username)} autoComplete="off" placeholder="Имя пользователя" />
               </Field>
-              <Field label={selectedProfile?.hasStoredPassword ? 'New password' : 'Password'} error={errors.password} className="full">
-                <input type="password" value={connection.password} onChange={(event) => update('password', event.target.value)} aria-invalid={Boolean(errors.password)} autoComplete="new-password" placeholder={selectedProfile?.hasStoredPassword ? 'Leave empty to keep stored password' : 'Password'} />
+              <Field label={selectedProfile?.hasStoredPassword ? 'Новый пароль' : 'Пароль'} error={errors.password} className="full">
+                <PasswordInput value={connection.password} onChange={(event) => update('password', event.target.value)} aria-invalid={Boolean(errors.password)} autoComplete="new-password" placeholder={selectedProfile?.hasStoredPassword ? 'Оставьте пустым, чтобы сохранить текущий пароль' : 'Пароль'} />
               </Field>
             </div>
 
             {selectedProfile?.hasStoredPassword && !removeStoredPassword && (
-              <div className="password-state"><span>✓ Password stored securely</span><button type="button" onClick={() => { setRemoveStoredPassword(true); update('savePasswordSecurely', false); }}>Remove stored password</button></div>
+              <div className="password-state"><span>✓ Пароль сохранён безопасно</span><button type="button" onClick={() => { setRemoveStoredPassword(true); update('savePasswordSecurely', false); }}>Удалить сохранённый пароль</button></div>
             )}
             {removeStoredPassword && (
-              <div className="password-state remove"><span>Stored password will be removed when saved</span><button type="button" onClick={() => { setRemoveStoredPassword(false); update('savePasswordSecurely', true); }}>Undo</button></div>
+              <div className="password-state remove"><span>Сохранённый пароль будет удалён</span><button type="button" onClick={() => { setRemoveStoredPassword(false); update('savePasswordSecurely', true); }}>Отменить</button></div>
             )}
 
-            <label className="check"><input type="checkbox" checked={connection.saveProfile} onChange={(event) => update('saveProfile', event.target.checked)} /> Save profile</label>
-            <label className="check"><input type="checkbox" checked={connection.savePasswordSecurely} disabled={removeStoredPassword} onChange={(event) => update('savePasswordSecurely', event.target.checked)} /> Save password securely</label>
+            <label className="check"><input type="checkbox" checked={connection.saveProfile} onChange={(event) => update('saveProfile', event.target.checked)} /> Сохранить профиль</label>
+            <label className="check"><input type="checkbox" checked={connection.savePasswordSecurely} disabled={removeStoredPassword} onChange={(event) => update('savePasswordSecurely', event.target.checked)} /> Сохранить пароль безопасно</label>
 
             {notice && <div className={`notice ${notice.kind}`} role="status">ⓘ {notice.message}</div>}
 
             {confirmingDelete && selectedProfile && (
               <div className="delete-confirmation">
-                <span>Delete “{selectedProfile.name}” and its stored password?</span>
-                <div><button type="button" className="danger" disabled={saving} onClick={() => void deleteProfile()}>Delete</button><button type="button" className="secondary" onClick={() => setConfirmingDelete(false)}>Cancel</button></div>
+                <span>Удалить «{selectedProfile.name}» и сохранённый пароль?</span>
+                <div><button type="button" className="danger" disabled={saving} onClick={() => void deleteProfile()}>Удалить</button><button type="button" className="secondary" onClick={() => setConfirmingDelete(false)}>Отмена</button></div>
               </div>
             )}
 
             <div className="dialog-actions">
-              {selectedProfile && !confirmingDelete && <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Delete profile</button>}
+              {selectedProfile && !confirmingDelete && <button type="button" className="danger-link" onClick={() => setConfirmingDelete(true)}>Удалить профиль</button>}
               <span className="action-spacer" />
-              <button type="button" onClick={() => void runConnectionAction('testing')} disabled={saving || connectionBusy} className="secondary">{connectionAction === 'testing' ? 'Testing…' : 'Test connection'}</button>
-              <button type="submit" disabled={saving || connectionBusy}>{saving ? 'Saving…' : selectedProfile ? 'Save changes' : 'Save profile'}</button>
-              <button type="button" onClick={() => void runConnectionAction('connecting')} disabled={saving || connectionBusy}>{connectionAction === 'connecting' ? 'Connecting…' : 'Connect'}</button>
+              <button type="button" onClick={() => void runConnectionAction('testing')} disabled={saving || connectionBusy} className="secondary">{connectionAction === 'testing' ? 'Проверка…' : 'Проверить подключение'}</button>
+              <button type="submit" disabled={saving || connectionBusy}>{saving ? 'Сохранение…' : selectedProfile ? 'Сохранить изменения' : 'Сохранить профиль'}</button>
+              <button type="button" onClick={() => void runConnectionAction('connecting')} disabled={saving || connectionBusy}>{connectionAction === 'connecting' ? 'Подключение…' : 'Подключиться'}</button>
             </div>
           </form>
         </div>

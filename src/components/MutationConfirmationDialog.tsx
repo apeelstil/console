@@ -22,28 +22,28 @@ export function MutationConfirmationDialog({
         {production && <div className="mutation-production-warning">PRODUCTION DATABASE</div>}
         <header>
           <div>
-            <h2 id="mutation-confirm-title">Confirm {preparation.operation}</h2>
-            <p>This statement will execute against PostgreSQL and remain uncommitted.</p>
+            <h2 id="mutation-confirm-title">Подтверждение {preparation.operation}</h2>
+            <p>Оператор будет выполнен в PostgreSQL и останется незафиксированным.</p>
           </div>
           <span className={`environment-badge ${preparation.connection.environment.toLowerCase()}`}>{preparation.connection.environment}</span>
         </header>
         <dl>
-          <dt>Database</dt><dd>{preparation.connection.database}</dd>
-          <dt>Connection</dt><dd>{preparation.connection.name}</dd>
-          <dt>Target</dt><dd>{preparation.target.schema}.{preparation.target.table}</dd>
-          <dt>Operation</dt><dd>{preparation.operation}</dd>
+          <dt>База данных</dt><dd>{preparation.connection.database}</dd>
+          <dt>Подключение</dt><dd>{preparation.connection.name}</dd>
+          <dt>Таблица</dt><dd>{preparation.target.schema}.{preparation.target.table}</dd>
+          <dt>Операция</dt><dd>{preparation.operation}</dd>
         </dl>
-        <div className="mutation-sql-label">SQL to execute</div>
+        <div className="mutation-sql-label">SQL для выполнения</div>
         <pre>{preparation.sqlText}</pre>
         <div className="mutation-lock-notice">
-          This is not a dry run. The statement can hold locks until COMMIT, ROLLBACK, or automatic rollback after 120 seconds.
+          Это реальное выполнение. Оператор может удерживать блокировки до COMMIT, ROLLBACK или автоматического отката через 120 секунд.
         </div>
         {preparation.storageWarnings?.map((warning) => <div className="storage-warning" key={warning}>{warning}</div>)}
         {error && <div className="data-message error" role="alert">{error}</div>}
         <footer>
-          <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Отмена</button>
           <button type="button" className={production ? 'danger' : ''} disabled={busy} onClick={onConfirm}>
-            {busy ? 'Executing…' : 'Execute in transaction'}
+            {busy ? 'Выполнение…' : 'Выполнить в транзакции'}
           </button>
         </footer>
       </section>

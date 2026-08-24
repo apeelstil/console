@@ -5,6 +5,7 @@ import {
   type QueryOperationState,
 } from '../../shared/queryExecution';
 import type { IpcResult } from '../../shared/connectionProfiles';
+import { USER_MESSAGES } from '../../shared/userMessages';
 import {
   PostgresQueryExecutionService,
   QueryExecutionError,
@@ -32,7 +33,7 @@ export function registerQueryExecutionHandlers(
       const service = getService();
       return service
         ? { ok: true, data: service.getState() }
-        : { ok: false, error: 'SELECT execution is unavailable.' };
+        : { ok: false, error: USER_MESSAGES.queryExecutionUnavailable };
     },
   );
 }
@@ -42,14 +43,14 @@ async function execute(
   sql: unknown,
 ): Promise<QueryExecutionResponse> {
   if (typeof sql !== 'string') {
-    return { ok: false, error: { kind: 'NOT_ALLOWED', message: 'SQL must be a string.' } };
+    return { ok: false, error: { kind: 'NOT_ALLOWED', message: 'SQL должен быть строкой.' } };
   }
 
   const service = getService();
   if (!service) {
     return {
       ok: false,
-      error: { kind: 'EXECUTION', message: 'SELECT execution is unavailable.' },
+      error: { kind: 'EXECUTION', message: USER_MESSAGES.queryExecutionUnavailable },
     };
   }
 
@@ -61,7 +62,7 @@ async function execute(
     }
     return {
       ok: false,
-      error: { kind: 'EXECUTION', message: 'The SELECT query could not be executed.' },
+      error: { kind: 'EXECUTION', message: 'Не удалось выполнить запрос SELECT.' },
     };
   }
 }
@@ -71,10 +72,10 @@ async function cancel(
   operationId: unknown,
 ): Promise<IpcResult<QueryOperationState>> {
   if (typeof operationId !== 'string' || operationId.length === 0 || operationId.length > 100) {
-    return { ok: false, error: 'The SELECT operation identifier is invalid.' };
+    return { ok: false, error: 'Некорректный идентификатор операции SELECT.' };
   }
   const service = getService();
-  if (!service) return { ok: false, error: 'SELECT cancellation is unavailable.' };
+  if (!service) return { ok: false, error: 'Отмена SELECT недоступна.' };
 
   try {
     return { ok: true, data: await service.cancelSelect(operationId) };
@@ -83,7 +84,7 @@ async function cancel(
       ok: false,
       error: error instanceof QueryOperationError
         ? error.safeMessage
-        : 'The SELECT cancellation request failed.',
+        : 'Не удалось отправить запрос отмены SELECT.',
     };
   }
 }
