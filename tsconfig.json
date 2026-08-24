@@ -17,5 +17,5 @@
     "jsx": "react-jsx",
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src", "shared", "vite.config.mts"]
+  "include": ["src", "shared", "vite.config.mts", "vite.preload.config.mts"]
 }

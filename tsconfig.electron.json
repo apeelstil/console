@@ -10,5 +10,6 @@
     "types": ["node"],
     "noUncheckedIndexedAccess": true
   },
-  "include": ["electron/**/*.ts", "shared/**/*.ts"]
+  "include": ["electron/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["electron/preload.ts"]
 }
