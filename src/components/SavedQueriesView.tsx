@@ -3,10 +3,11 @@ import type { SavedQuery } from '../../shared/localQueryData';
 
 interface SavedQueriesViewProps {
   editorSql: string;
+  refreshVersion: number;
   onLoadSql: (sql: string, sourceLabel: string) => void;
 }
 
-export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps) {
+export function SavedQueriesView({ editorSql, refreshVersion, onLoadSql }: SavedQueriesViewProps) {
   const [queries, setQueries] = useState<SavedQuery[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [creating, setCreating] = useState(false);
@@ -69,7 +70,7 @@ export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [refreshVersion]);
 
   const beginCreate = () => {
     setCreating(true);

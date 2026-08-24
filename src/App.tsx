@@ -16,11 +16,17 @@ import { DatabaseExplorer } from './components/DatabaseExplorer';
 import { QueryBuilder } from './components/QueryBuilder';
 import { ResultsGrid } from './components/ResultsGrid';
 import { SavedQueriesView } from './components/SavedQueriesView';
+import { SaveQueryDialog } from './components/SaveQueryDialog';
 import { AuditLogView, QueryHistoryView } from './components/QueryActivityViews';
 import { SqlReplaceConfirmation } from './components/SqlReplaceConfirmation';
 import { MutationConfirmationDialog } from './components/MutationConfirmationDialog';
 import { PendingTransactionPanel } from './components/PendingTransactionPanel';
 import { commitEditorLoad, prepareEditorLoad, type EditorLoadRequest } from './editorLoadPolicy';
+import {
+  isSaveQueryAvailable,
+  openSaveQueryDialog,
+  type SaveQueryDialogState,
+} from './savedQueryUi';
 import type { DatabaseExplorerSelection } from './databaseExplorerController';
 import {
   createQueryBuilderState,
@@ -45,6 +51,9 @@ export function App() {
   const [execution, setExecution] = useState<ExecutionViewState>({ status: 'idle' });
   const [queryOperation, setQueryOperation] = useState<QueryOperationState>({ status: 'IDLE' });
   const [pendingEditorLoad, setPendingEditorLoad] = useState<EditorLoadRequest>();
+  const [saveQueryDialog, setSaveQueryDialog] = useState<SaveQueryDialogState>({ status: 'closed' });
+  const [savedQueriesRevision, setSavedQueriesRevision] = useState(0);
+  const [saveQueryFeedback, setSaveQueryFeedback] = useState<string>();
   const [mutationState, setMutationState] = useState<MutationTransactionState>({ status: 'IDLE' });
   const [mutationPreparation, setMutationPreparation] = useState<PreparedMutation>();
   const [mutationBusy, setMutationBusy] = useState(false);
@@ -62,6 +71,12 @@ export function App() {
     }).catch(() => undefined);
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!saveQueryFeedback) return;
+    const timeout = window.setTimeout(() => setSaveQueryFeedback(undefined), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [saveQueryFeedback]);
 
   useEffect(() => {
     const api = window.supraDesktop;
@@ -113,6 +128,7 @@ export function App() {
     ? `${queryBuilder.object.schema}.${queryBuilder.object.name}`
     : 'No database object selected';
   const canExecute = connected && sql.trim().length > 0 && !executing && !postgresOperationsBlocked && !mutationBusy;
+  const canSaveQuery = isSaveQueryAvailable(sql);
   const canExecuteChange = connected
     && sql.trim().length > 0
     && !executing
@@ -139,6 +155,20 @@ export function App() {
     commitEditorLoad(pendingEditorLoad, replaceEditorSql);
     setPendingEditorLoad(undefined);
     setSection('workspace');
+  };
+
+  const beginSaveQuery = () => {
+    const nextDialog = openSaveQueryDialog(sql);
+    if (nextDialog.status === 'open') {
+      setSaveQueryFeedback(undefined);
+      setSaveQueryDialog(nextDialog);
+    }
+  };
+
+  const completeSaveQuery = () => {
+    setSaveQueryDialog({ status: 'closed' });
+    setSavedQueriesRevision((revision) => revision + 1);
+    setSaveQueryFeedback('Query saved locally.');
   };
 
   const executeSelect = async () => {
@@ -337,7 +367,17 @@ export function App() {
               onGeneratedSql={replaceEditorSql}
             />
             <section className="editor panel">
-              <div className="panel-heading"><span>SQL Editor</span><div><span className="readonly-label">Ctrl+Enter to execute</span><button type="button" className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button><button type="button" disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>{executing && <button type="button" className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}</div></div>
+              <div className="panel-heading">
+                <span>SQL Editor</span>
+                <div>
+                  {saveQueryFeedback && <span className="editor-save-feedback" role="status">✓ {saveQueryFeedback}</span>}
+                  <span className="readonly-label">Ctrl+Enter to execute</span>
+                  <button type="button" className="save-query-button" disabled={!canSaveQuery} onClick={beginSaveQuery} title={canSaveQuery ? 'Save the current SQL Editor contents' : 'Write SQL before saving.'}>☆ Save query</button>
+                  <button type="button" className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button>
+                  <button type="button" disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>
+                  {executing && <button type="button" className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}
+                </div>
+              </div>
               <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Write one SELECT or generate it with Query Builder" onChange={(event) => { setSql(event.target.value); updateEditorPosition(event.target.value, event.target.selectionStart); }} onSelect={(event) => updateEditorPosition(event.currentTarget.value, event.currentTarget.selectionStart)} onKeyDown={handleEditorKeyDown} aria-label="SQL editor" /></div>
               <div className="editor-status"><span>Ln {editorPosition.line}, Col {editorPosition.column}</span><span>SELECT read-only · changes require confirmation + COMMIT/ROLLBACK</span></div>
             </section>
@@ -370,7 +410,7 @@ export function App() {
               ) : <div className="output-empty"><span>ⓘ</span><strong>No messages</strong><small>Execution errors will appear here</small></div>}
             </section>
           </> : section === 'saved' ? (
-            <SavedQueriesView editorSql={sql} onLoadSql={loadSqlIntoEditor} />
+            <SavedQueriesView editorSql={sql} refreshVersion={savedQueriesRevision} onLoadSql={loadSqlIntoEditor} />
           ) : section === 'history' ? (
             <QueryHistoryView onLoadSql={loadSqlIntoEditor} />
           ) : <AuditLogView />}
@@ -378,6 +418,13 @@ export function App() {
       </div>
 
       {connectionOpen && <ConnectionDialog connectionState={connectionState} onClose={() => setConnectionOpen(false)} onConnected={() => setConnectionOpen(false)} onEnvironmentChange={setConnectionEnvironment} />}
+      {saveQueryDialog.status === 'open' && (
+        <SaveQueryDialog
+          sqlText={saveQueryDialog.sqlText}
+          onCancel={() => setSaveQueryDialog({ status: 'closed' })}
+          onSaved={completeSaveQuery}
+        />
+      )}
       {pendingEditorLoad && (
         <SqlReplaceConfirmation
           sourceLabel={pendingEditorLoad.sourceLabel}

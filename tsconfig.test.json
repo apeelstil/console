@@ -10,5 +10,5 @@
     "types": ["node"],
     "noUncheckedIndexedAccess": true
   },
-  "include": ["electron/storage/**/*.ts", "electron/postgres/**/*.ts", "shared/**/*.ts", "src/databaseExplorerController.ts", "src/editorLoadPolicy.ts", "src/queryBuilder/**/*.ts", "tests/**/*.ts"]
+  "include": ["electron/storage/**/*.ts", "electron/postgres/**/*.ts", "shared/**/*.ts", "src/databaseExplorerController.ts", "src/editorLoadPolicy.ts", "src/savedQueryUi.ts", "src/queryBuilder/**/*.ts", "tests/**/*.ts"]
 }

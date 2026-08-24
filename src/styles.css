@@ -1273,3 +1273,92 @@ textarea {
     min-height: 0;
   }
 }
+
+.panel-heading .save-query-button {
+  color: #176677;
+  background: #edf7f8;
+  border-color: #91c4ca;
+}
+
+.panel-heading .save-query-button:hover:not(:disabled) {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.editor-save-feedback {
+  color: var(--success);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.save-query-modal-backdrop {
+  z-index: 34;
+}
+
+.save-query-dialog {
+  width: min(440px, calc(100vw - 48px));
+  color: var(--text);
+  background: #fff;
+  border: 1px solid #97aab2;
+  border-radius: 3px;
+  box-shadow: 0 22px 65px rgb(4 22 29 / 36%);
+  overflow: hidden;
+}
+
+.save-query-dialog header {
+  padding: 13px 16px 11px;
+  background: #f6f8f9;
+  border-bottom: 1px solid var(--border);
+}
+
+.save-query-dialog h2 {
+  margin: 0 0 3px;
+  color: #263d46;
+  font-size: 15px;
+}
+
+.save-query-dialog header p {
+  margin: 0;
+  color: #75878f;
+  font-size: 10px;
+}
+
+.save-query-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.save-query-dialog label > span {
+  margin-left: 4px;
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.save-query-dialog textarea {
+  height: 68px;
+  flex: none;
+  resize: vertical;
+  padding: 7px 8px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  font: 11px/1.4 "Segoe UI", Arial, sans-serif;
+}
+
+.save-query-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.save-query-dialog footer button {
+  min-width: 78px;
+}
