@@ -40,6 +40,7 @@ export function App() {
   const [section, setSection] = useState<WorkspaceSection>('workspace');
   const [bottomTab, setBottomTab] = useState<'results' | 'messages'>('results');
   const [sql, setSql] = useState('');
+  const [editorPosition, setEditorPosition] = useState({ line: 1, column: 1 });
   const [queryBuilder, setQueryBuilder] = useState(createQueryBuilderState);
   const [execution, setExecution] = useState<ExecutionViewState>({ status: 'idle' });
   const [queryOperation, setQueryOperation] = useState<QueryOperationState>({ status: 'IDLE' });
@@ -108,6 +109,9 @@ export function App() {
     ? JSON.stringify([queryBuilder.object.schema, queryBuilder.object.name, queryBuilder.object.type])
     : 'no-object';
   const editorLineCount = Math.max(1, sql.split('\n').length);
+  const selectedDatabaseObject = queryBuilder.object
+    ? `${queryBuilder.object.schema}.${queryBuilder.object.name}`
+    : 'No database object selected';
   const canExecute = connected && sql.trim().length > 0 && !executing && !postgresOperationsBlocked && !mutationBusy;
   const canExecuteChange = connected
     && sql.trim().length > 0
@@ -115,19 +119,24 @@ export function App() {
     && !postgresOperationsBlocked
     && !mutationBusy;
 
+  const replaceEditorSql = useCallback((nextSql: string): void => {
+    setSql(nextSql);
+    setEditorPosition({ line: 1, column: 1 });
+  }, []);
+
   const loadSqlIntoEditor = useCallback((nextSql: string, sourceLabel: string) => {
     const request = prepareEditorLoad(nextSql, sql, sourceLabel);
     if (request.requiresConfirmation) {
       setPendingEditorLoad(request);
       return;
     }
-    commitEditorLoad(request, setSql);
+    commitEditorLoad(request, replaceEditorSql);
     setSection('workspace');
-  }, [sql]);
+  }, [replaceEditorSql, sql]);
 
   const confirmEditorLoad = () => {
     if (!pendingEditorLoad) return;
-    commitEditorLoad(pendingEditorLoad, setSql);
+    commitEditorLoad(pendingEditorLoad, replaceEditorSql);
     setPendingEditorLoad(undefined);
     setSection('workspace');
   };
@@ -261,16 +270,25 @@ export function App() {
     }
   };
 
+  function updateEditorPosition(value: string, selectionStart: number): void {
+    const textBeforeCursor = value.slice(0, selectionStart);
+    const lines = textBeforeCursor.split('\n');
+    setEditorPosition({
+      line: lines.length,
+      column: (lines.at(-1)?.length ?? 0) + 1,
+    });
+  }
+
   return (
     <div className="app-shell">
       {displayedEnvironment && isProductionEnvironment(displayedEnvironment) && <div className="production-banner">PRODUCTION DATABASE</div>}
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">SQ</span><strong>SUPRA Query Console</strong></div>
+        <div className="brand"><span className="brand-mark">SQ</span><span className="brand-copy"><strong>SUPRA Query Console</strong><small>Database support workspace</small></span></div>
         <nav className="top-actions">
-          <button className="toolbar-button" disabled={connected || disconnecting} onClick={() => setConnectionOpen(true)}>New connection</button>
+          <button type="button" className="toolbar-button" disabled={connected || disconnecting} onClick={() => setConnectionOpen(true)}>＋ Connection</button>
           {connected && activeConnection && <span className={`connection-summary ${activeConnection.environment === 'PROD' ? 'prod' : ''}`}><b>{activeConnection.name}</b><em>{activeConnection.environment}</em><span>{activeConnection.database}</span><span>{activeConnection.username}</span></span>}
-          {(connected || disconnecting) && <button className="disconnect-button" disabled={disconnecting || transactionBusy} title={transactionPending ? 'The pending transaction will be rolled back before disconnect.' : executing ? 'The running SELECT will be cancelled and rolled back before disconnect.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Disconnecting…' : 'Disconnect'}</button>}
-          <span className={`status ${connectionState.status.toLowerCase()}`}><i />{formatConnectionStatus(connectionState.status)}</span>
+          {(connected || disconnecting) && <button type="button" className="disconnect-button" disabled={disconnecting || transactionBusy} title={transactionPending ? 'The pending transaction will be rolled back before disconnect.' : executing ? 'The running SELECT will be cancelled and rolled back before disconnect.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Disconnecting…' : 'Disconnect'}</button>}
+          <span className={`status ${connectionState.status.toLowerCase()}`} role="status" aria-live="polite"><i />{formatConnectionStatus(connectionState.status)}</span>
         </nav>
       </header>
       {connectionState.status === 'ERROR' && connectionState.message && (
@@ -293,29 +311,38 @@ export function App() {
             onSelectionChange={handleExplorerSelection}
           />
           <div className="side-nav">
-            <button className={section === 'workspace' ? 'active' : ''} onClick={() => setSection('workspace')}>⌨ <span>SQL Workspace</span></button>
-            <button className={section === 'saved' ? 'active' : ''} onClick={() => setSection('saved')}>☆ <span>Saved Queries</span></button>
-            <button className={section === 'history' ? 'active' : ''} onClick={() => setSection('history')}>◷ <span>Query History</span></button>
-            <button className={section === 'audit' ? 'active' : ''} onClick={() => setSection('audit')}>≡ <span>Audit Log</span></button>
+            <button type="button" className={section === 'workspace' ? 'active' : ''} onClick={() => setSection('workspace')}><i>⌨</i><span>SQL Workspace</span></button>
+            <button type="button" className={section === 'saved' ? 'active' : ''} onClick={() => setSection('saved')}><i>☆</i><span>Saved Queries</span></button>
+            <button type="button" className={section === 'history' ? 'active' : ''} onClick={() => setSection('history')}><i>◷</i><span>Query History</span></button>
+            <button type="button" className={section === 'audit' ? 'active' : ''} onClick={() => setSection('audit')}><i>≡</i><span>Audit Log</span></button>
           </div>
         </aside>
 
-        <main className="main-area">
+        <main className={`main-area ${section === 'workspace' ? 'workspace-layout' : 'data-layout'}`}>
           {section === 'workspace' ? <>
+            <div className="workspace-header">
+              <div className="workspace-breadcrumb"><span>SQL Workspace</span><b>›</b><strong title={selectedDatabaseObject}>{selectedDatabaseObject}</strong></div>
+              <div className="workspace-badges">
+                <span className="safety-badge">READ-ONLY SELECT PATH</span>
+                {queryOperation.status !== 'IDLE' && (
+                  <span className={`query-operation-status ${cancelling ? 'cancelling' : 'executing'}`} role="status" aria-live="polite"><i />{cancelling ? 'CANCELLING' : 'EXECUTING'}</span>
+                )}
+              </div>
+            </div>
             <QueryBuilder
               key={builderObjectKey}
               state={queryBuilder}
               editorSql={sql}
               onChange={setQueryBuilder}
-              onGeneratedSql={setSql}
+              onGeneratedSql={replaceEditorSql}
             />
             <section className="editor panel">
-              <div className="panel-heading"><span>SQL Editor</span><div><span className="readonly-label">SELECT: Ctrl+Enter</span><button className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button><button disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>{executing && <button className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}</div></div>
-              <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Write one SELECT or generate it with Query Builder" onChange={(event) => setSql(event.target.value)} onKeyDown={handleEditorKeyDown} aria-label="SQL editor" /></div>
-              <div className="editor-status"><span>Ln 1, Col 1</span><span>SELECT read-only · changes require confirmation + COMMIT/ROLLBACK</span></div>
+              <div className="panel-heading"><span>SQL Editor</span><div><span className="readonly-label">Ctrl+Enter to execute</span><button type="button" className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button><button type="button" disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>{executing && <button type="button" className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}</div></div>
+              <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Write one SELECT or generate it with Query Builder" onChange={(event) => { setSql(event.target.value); updateEditorPosition(event.target.value, event.target.selectionStart); }} onSelect={(event) => updateEditorPosition(event.currentTarget.value, event.currentTarget.selectionStart)} onKeyDown={handleEditorKeyDown} aria-label="SQL editor" /></div>
+              <div className="editor-status"><span>Ln {editorPosition.line}, Col {editorPosition.column}</span><span>SELECT read-only · changes require confirmation + COMMIT/ROLLBACK</span></div>
             </section>
             <section className="output panel">
-              <div className="tabs"><button className={bottomTab === 'results' ? 'active' : ''} onClick={() => setBottomTab('results')}>Results</button><button className={bottomTab === 'messages' ? 'active' : ''} onClick={() => setBottomTab('messages')}>Messages</button></div>
+              <div className="tabs"><button type="button" className={bottomTab === 'results' ? 'active' : ''} onClick={() => setBottomTab('results')}>Results</button><button type="button" className={bottomTab === 'messages' ? 'active' : ''} onClick={() => setBottomTab('messages')}>Messages</button></div>
               {transactionPending ? (
                 <PendingTransactionPanel
                   transaction={mutationState as PendingMutationTransaction}
@@ -385,11 +412,11 @@ function formatExecutionErrorKind(kind: QueryExecutionErrorDto['kind']): string 
 
 function formatConnectionStatus(status: ConnectionState['status']): string {
   switch (status) {
-    case 'TESTING': return 'Testing';
-    case 'CONNECTING': return 'Connecting';
-    case 'CONNECTED': return 'Connected';
-    case 'DISCONNECTING': return 'Disconnecting';
-    case 'ERROR': return 'Connection error';
-    default: return 'Disconnected';
+    case 'TESTING': return 'TESTING';
+    case 'CONNECTING': return 'CONNECTING';
+    case 'CONNECTED': return 'CONNECTED';
+    case 'DISCONNECTING': return 'DISCONNECTING';
+    case 'ERROR': return 'CONNECTION ERROR';
+    default: return 'DISCONNECTED';
   }
 }

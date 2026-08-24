@@ -170,7 +170,7 @@ function TreeMessage({ depth, message }: { depth: number; message: string }) {
 }
 
 function TreeError({ depth, message, onRetry }: { depth: number; message: string; onRetry: () => void }) {
-  return <div className="tree-error" role="status" style={{ paddingLeft: 23 + depth * 14 }}><span title={message}>{message}</span><button onClick={onRetry}>Retry</button></div>;
+  return <div className="tree-error" role="status" style={{ paddingLeft: 23 + depth * 14 }}><span title={message}>{message}</span><button type="button" onClick={onRetry}>Retry</button></div>;
 }
 
 function iconGlyph(icon: TreeRowProps['icon']): string {

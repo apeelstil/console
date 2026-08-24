@@ -14,6 +14,7 @@ export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps
   const [description, setDescription] = useState('');
   const [deletePending, setDeletePending] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string }>();
 
   const selected = useMemo(
@@ -42,7 +43,16 @@ export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps
 
   useEffect(() => {
     let active = true;
-    void window.supraDesktop?.listSavedQueries().then((result) => {
+    const api = window.supraDesktop;
+    if (!api) {
+      void Promise.resolve().then(() => {
+        if (!active) return;
+        setMessage({ kind: 'error', text: 'Saved query storage is unavailable.' });
+        setLoading(false);
+      });
+      return () => { active = false; };
+    }
+    void api.listSavedQueries().then((result) => {
       if (!active) return;
       if (!result.ok) {
         setMessage({ kind: 'error', text: result.error });
@@ -53,6 +63,10 @@ export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps
       setSelectedId(first?.id);
       setName(first?.name ?? '');
       setDescription(first?.description ?? '');
+    }).catch(() => {
+      if (active) setMessage({ kind: 'error', text: 'Could not load saved queries.' });
+    }).finally(() => {
+      if (active) setLoading(false);
     });
     return () => { active = false; };
   }, []);
@@ -135,7 +149,8 @@ export function SavedQueriesView({ editorSql, onLoadSql }: SavedQueriesViewProps
       </div>
       <div className="data-section-body">
         <div className="record-list saved-query-list">
-          {queries.length === 0 && !creating && <div className="record-empty">No saved queries yet.</div>}
+          {loading && <div className="record-empty" role="status">Loading saved queries…</div>}
+          {!loading && queries.length === 0 && !creating && <div className="record-empty">No saved queries yet.</div>}
           {queries.map((query) => (
             <button
               type="button"

@@ -16,6 +16,12 @@ SQLite schema version 4 also stores local Saved Queries, the latest 500 user Exe
 
 Audit records the Windows username and computer name, database target, environment, database user, SQL, safe outcome/error information, duration, and row count. It never stores passwords, encrypted passwords, connection strings, or stack traces. This local SQLite audit is operational trace data, not tamper-proof security logging; a Windows user with filesystem access can modify or delete it. `QueryActivityRecorder` is the boundary for adding a centralized audit backend in a later stage.
 
+## v1 status
+
+SUPRA Query Console v1 provides local connection profiles with optional secure password storage, PostgreSQL metadata browsing, a visual SELECT builder, guarded SELECT execution with real cancellation, confirmed INSERT/UPDATE transactions, Saved Queries, Query History, and a local Audit Log. Its UI is optimized for a compact enterprise desktop workflow with a persistent Database Explorer, SQL workspace, dense results, and explicit connection/operation status.
+
+DELETE, TRUNCATE, MERGE, DDL, arbitrary transaction control, multiple statements, and unsafe UPDATE remain intentionally blocked. Production connections are permanently marked in the UI; use a least-privilege database account, review every mutation, and never run mutation smoke tests against PROD. The portable build targets Windows 10/11 x64 and does not require installation.
+
 ## Commands
 
 ```powershell

@@ -9,32 +9,53 @@ export function QueryHistoryView({ onLoadSql }: QueryHistoryViewProps) {
   const [entries, setEntries] = useState<QueryHistoryEntry[]>([]);
   const [selected, setSelected] = useState<QueryHistoryEntry>();
   const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
-    const result = await window.supraDesktop?.listQueryHistory();
-    if (!result) return setError('Query history is unavailable.');
-    if (!result.ok) return setError(result.error);
-    setEntries(result.data);
-    setSelected((current) => result.data.find((entry) => entry.id === current?.id) ?? result.data[0]);
-    setError(undefined);
+    setLoading(true);
+    try {
+      const result = await window.supraDesktop?.listQueryHistory();
+      if (!result) return setError('Query history is unavailable.');
+      if (!result.ok) return setError(result.error);
+      setEntries(result.data);
+      setSelected((current) => result.data.find((entry) => entry.id === current?.id) ?? result.data[0]);
+      setError(undefined);
+    } catch {
+      setError('Could not load query history.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => {
     let active = true;
-    void window.supraDesktop?.listQueryHistory().then((result) => {
+    void Promise.resolve(window.supraDesktop).then(async (api) => {
+      if (!api) {
+        if (active) setError('Query history is unavailable.');
+        return;
+      }
+      const result = await api.listQueryHistory();
       if (!active) return;
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setEntries(result.data);
       setSelected(result.data[0]);
+      setError(undefined);
+    }).catch(() => {
+      if (active) setError('Could not load query history.');
+    }).finally(() => {
+      if (active) setLoading(false);
     });
     return () => { active = false; };
   }, []);
 
   return (
-    <ActivitySection title="Query History" subtitle="Latest 500 Execute attempts" onRefresh={() => void load()}>
+    <ActivitySection title="Query History" subtitle="Latest 500 Execute attempts" loading={loading} onRefresh={() => void load()}>
       <div className="activity-table-wrap">
         <table className="activity-table">
           <thead><tr><th>Time</th><th>Target</th><th>Status</th><th>SQL</th><th>Duration</th><th>Rows</th></tr></thead>
           <tbody>{entries.map((entry) => (
-            <tr key={entry.id} className={selected?.id === entry.id ? 'selected' : ''} onClick={() => setSelected(entry)}>
+            <tr key={entry.id} tabIndex={0} aria-selected={selected?.id === entry.id} className={selected?.id === entry.id ? 'selected' : ''} onClick={() => setSelected(entry)} onKeyDown={(event) => selectRowFromKeyboard(event, () => setSelected(entry))}>
               <td>{formatTimestamp(entry.timestamp)}</td>
               <td>{entry.database ?? '—'}<small>{entry.profileName ?? 'Temporary connection'}</small></td>
               <td><StatusBadge status={entry.status} /></td>
@@ -44,7 +65,8 @@ export function QueryHistoryView({ onLoadSql }: QueryHistoryViewProps) {
             </tr>
           ))}</tbody>
         </table>
-        {entries.length === 0 && !error && <div className="record-empty">No Execute attempts have been recorded.</div>}
+        {loading && <div className="record-empty" role="status">Loading query history…</div>}
+        {!loading && entries.length === 0 && !error && <div className="record-empty">No Execute attempts have been recorded.</div>}
       </div>
       <ActivityDetail entry={selected} onLoadSql={onLoadSql} />
       {error && <div className="data-message error" role="alert">{error}</div>}
@@ -56,32 +78,53 @@ export function AuditLogView() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [selected, setSelected] = useState<AuditLogEntry>();
   const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
-    const result = await window.supraDesktop?.listAuditLog();
-    if (!result) return setError('Audit log is unavailable.');
-    if (!result.ok) return setError(result.error);
-    setEntries(result.data);
-    setSelected((current) => result.data.find((entry) => entry.id === current?.id) ?? result.data[0]);
-    setError(undefined);
+    setLoading(true);
+    try {
+      const result = await window.supraDesktop?.listAuditLog();
+      if (!result) return setError('Audit log is unavailable.');
+      if (!result.ok) return setError(result.error);
+      setEntries(result.data);
+      setSelected((current) => result.data.find((entry) => entry.id === current?.id) ?? result.data[0]);
+      setError(undefined);
+    } catch {
+      setError('Could not load audit log.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => {
     let active = true;
-    void window.supraDesktop?.listAuditLog().then((result) => {
+    void Promise.resolve(window.supraDesktop).then(async (api) => {
+      if (!api) {
+        if (active) setError('Audit log is unavailable.');
+        return;
+      }
+      const result = await api.listAuditLog();
       if (!active) return;
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setEntries(result.data);
       setSelected(result.data[0]);
+      setError(undefined);
+    }).catch(() => {
+      if (active) setError('Could not load audit log.');
+    }).finally(() => {
+      if (active) setLoading(false);
     });
     return () => { active = false; };
   }, []);
 
   return (
-    <ActivitySection title="Audit Log" subtitle="Local read-only audit · not tamper-proof" onRefresh={() => void load()}>
+    <ActivitySection title="Audit Log" subtitle="Local read-only audit · not tamper-proof" loading={loading} onRefresh={() => void load()}>
       <div className="activity-table-wrap">
         <table className="activity-table audit-table">
           <thead><tr><th>Time</th><th>Windows user</th><th>Environment / database</th><th>Operation</th><th>Outcome</th><th>Duration / rows</th></tr></thead>
           <tbody>{entries.map((entry) => (
-            <tr key={entry.id} className={selected?.id === entry.id ? 'selected' : ''} onClick={() => setSelected(entry)}>
+            <tr key={entry.id} tabIndex={0} aria-selected={selected?.id === entry.id} className={selected?.id === entry.id ? 'selected' : ''} onClick={() => setSelected(entry)} onKeyDown={(event) => selectRowFromKeyboard(event, () => setSelected(entry))}>
               <td>{formatTimestamp(entry.timestamp)}</td>
               <td>{entry.windowsUser}<small>{entry.computerName}</small></td>
               <td>{entry.environment ?? '—'} / {entry.database ?? '—'}<small>{entry.profileName ?? 'Temporary connection'}</small></td>
@@ -91,7 +134,8 @@ export function AuditLogView() {
             </tr>
           ))}</tbody>
         </table>
-        {entries.length === 0 && !error && <div className="record-empty">No audit entries have been recorded.</div>}
+        {loading && <div className="record-empty" role="status">Loading audit log…</div>}
+        {!loading && entries.length === 0 && !error && <div className="record-empty">No audit entries have been recorded.</div>}
       </div>
       <AuditDetail entry={selected} />
       {error && <div className="data-message error" role="alert">{error}</div>}
@@ -99,9 +143,10 @@ export function AuditLogView() {
   );
 }
 
-function ActivitySection({ title, subtitle, onRefresh, children }: {
+function ActivitySection({ title, subtitle, loading, onRefresh, children }: {
   title: string;
   subtitle: string;
+  loading: boolean;
   onRefresh: () => void;
   children: React.ReactNode;
 }) {
@@ -109,7 +154,7 @@ function ActivitySection({ title, subtitle, onRefresh, children }: {
     <section className="data-section activity-section panel">
       <div className="data-section-toolbar">
         <div><strong>{title}</strong><small>{subtitle}</small></div>
-        <button type="button" className="secondary" onClick={onRefresh}>Refresh</button>
+        <button type="button" className="secondary" disabled={loading} onClick={onRefresh}>{loading ? 'Refreshing…' : 'Refresh'}</button>
       </div>
       <div className="activity-layout">{children}</div>
     </section>
@@ -158,4 +203,10 @@ function formatTimestamp(timestamp: string): string {
 
 function formatMetric(value: number | null, unit: string): string {
   return value === null ? '—' : `${value} ${unit}`;
+}
+
+function selectRowFromKeyboard(event: React.KeyboardEvent<HTMLTableRowElement>, select: () => void): void {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  select();
 }

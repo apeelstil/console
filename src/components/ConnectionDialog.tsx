@@ -251,7 +251,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
       <div className="connection-dialog" role="dialog" aria-modal="true" aria-labelledby="connection-title">
         <div className="dialog-header">
           <div><h2 id="connection-title">Connection Profiles</h2><p>Local PostgreSQL profile settings</p></div>
-          <button className="close" onClick={onClose} aria-label="Close">×</button>
+          <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
         </div>
 
         <div className="connection-content">
