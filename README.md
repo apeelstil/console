@@ -12,21 +12,21 @@ While a mutation transaction is pending, a shared main-process operation gate bl
 
 The application database is named `supra-console.db` and is resolved at runtime under Electron's `app.getPath('userData')`. It is never stored next to the portable executable.
 
-SQLite schema version 4 also stores local Saved Queries, the latest 500 user Execute attempts, and an untrimmed local Audit Log. Query execution records SUCCESS, PostgreSQL ERROR, TIMEOUT, safety BLOCKED, and manual CANCELLED outcomes in the main process. Mutation audit additionally records validation, pending INSERT/UPDATE, COMMIT, manual/automatic ROLLBACK, errors, and connection loss. The renderer can manage Saved Queries and read History/Audit, but it has no Audit create, update, or delete IPC. Loading Saved/History SQL only replaces editor text after the existing Cancel/Replace safeguard and never executes it.
+SQLite schema version 5 also stores local Saved Queries, the latest 500 user Execute attempts, and an untrimmed local Audit Log. Query execution records SUCCESS, PostgreSQL ERROR, TIMEOUT, safety BLOCKED, and manual CANCELLED outcomes in the main process. Mutation audit additionally records validation, pending INSERT/UPDATE, COMMIT, manual/automatic ROLLBACK, errors, and connection loss. The renderer can manage Saved Queries and read History/Audit, but it has no Audit create, update, or delete IPC. Loading Saved/History SQL only replaces editor text after the existing Cancel/Replace safeguard and never executes it.
 
 Audit records the Windows username and computer name, database target, environment, database user, SQL, safe outcome/error information, duration, and row count. It never stores passwords, encrypted passwords, connection strings, or stack traces. This local SQLite audit is operational trace data, not tamper-proof security logging; a Windows user with filesystem access can modify or delete it. `QueryActivityRecorder` is the boundary for adding a centralized audit backend in a later stage.
 
-## v1 Release Candidate status
+## v1 Release status
 
-SUPRA Query Console `1.0.0-rc.1` provides local connection profiles without password storage, PostgreSQL metadata browsing, a visual SELECT builder, guarded SELECT execution with real cancellation, confirmed INSERT/UPDATE transactions, Saved Queries, Query History, and a local Audit Log. Its UI is optimized for a compact enterprise desktop workflow with a persistent Database Explorer, SQL workspace, dense results, and explicit connection/operation status.
+SUPRA Query Console `1.0.0` provides local connection profiles without password storage, PostgreSQL metadata browsing, a visual SELECT builder, guarded SELECT execution with real cancellation, confirmed INSERT/UPDATE transactions, Saved Queries, Query History, and a local Audit Log. Its UI is optimized for a compact enterprise desktop workflow with a persistent Database Explorer, SQL workspace, dense results, and explicit connection/operation status.
 
 DELETE, TRUNCATE, MERGE, DDL, arbitrary transaction control, multiple statements, and unsafe UPDATE remain intentionally blocked. Production connections are permanently marked in the UI; use a least-privilege database account, review every mutation, and never run mutation smoke tests against PROD. The portable build targets Windows 10/11 x64 and does not require installation.
 
-The RC has automated regression and packaging verification, but it must complete the Manual PostgreSQL Smoke Test against an explicitly disposable TEST/DEV database before it can be promoted to fully verified `1.0.0` for operational use.
+The `1.0.0` release completed automated regression, packaging verification, and the Manual PostgreSQL Smoke Test against an explicitly disposable TEST/DEV database.
 
 ## Windows portable launch
 
-Build with `npm.cmd run build:portable`, copy the resulting `release/SUPRA-Query-Console-1.0.0-rc.1-portable.exe` to a Windows 10/11 x64 workstation, and run it directly. Node.js and an installer are not required. Local profiles, Saved Queries, History, and Audit are stored in Electron's per-user `userData` directory under the Windows profile, never beside the executable.
+Build with `npm.cmd run build:portable`, copy the resulting `release/SUPRA-Query-Console-1.0.0-portable.exe` to a Windows 10/11 x64 workstation, and run it directly. Node.js and an installer are not required. Local profiles, Saved Queries, History, and Audit are stored in Electron's per-user `userData` directory under the Windows profile, never beside the executable.
 
 ## Commands
 
@@ -70,7 +70,6 @@ Use only disposable TEST/DEV data and a test account with the minimum required d
 
 ## Known limitations
 
-- This build is a Release Candidate until the full checklist above is completed against an explicitly disposable TEST/DEV PostgreSQL database.
 - Results are limited to 1000 displayed rows; SELECT and mutation statements have a 15-second timeout, and an uncommitted mutation is automatically rolled back after 120 seconds.
 - Audit is local operational trace data, not tamper-proof centralized security logging.
 - The portable executable is unsigned and currently uses the default Electron application icon; Windows SmartScreen policy may require administrator review before internal distribution.

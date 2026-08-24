@@ -19,8 +19,8 @@ interface PackageMetadata {
 const packagePath = path.resolve(process.cwd(), 'package.json');
 const metadata = JSON.parse(readFileSync(packagePath, 'utf8')) as PackageMetadata;
 
-test('package metadata identifies the unverified build as a release candidate', () => {
-  assert.equal(metadata.version, '1.0.0-rc.1');
+test('package metadata identifies the verified 1.0.0 release', () => {
+  assert.equal(metadata.version, '1.0.0');
 });
 
 test('portable package keeps only main-process runtime dependencies', () => {

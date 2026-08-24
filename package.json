@@ -1,6 +1,6 @@
 {
   "name": "supra-query-console",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Desktop SQL workspace for SUPRA technical support",
   "main": "dist-electron/electron/main.js",
