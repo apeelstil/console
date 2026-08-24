@@ -1,6 +1,6 @@
 {
   "name": "supra-query-console",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "Desktop SQL workspace for SUPRA technical support",
   "main": "dist-electron/electron/main.js",
@@ -10,18 +10,13 @@
     "lint": "eslint .",
     "build": "npm run typecheck && vite build && tsc -p tsconfig.electron.json",
     "build:portable": "npm run build && electron-builder --win portable --x64",
-    "test": "tsc -p tsconfig.test.json && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/connectionProfileService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/localQueryData.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresConnectionManager.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresMetadataService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/sqlSafetyService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresQueryExecutionService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/mutationSafetyService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/mutationTransactionManager.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/databaseExplorerController.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/sqlSelectGenerator.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/queryBuilderModel.test.js && set ELECTRON_RUN_AS_NODE=&& electron dist-test/tests/safeStorageIntegration.js",
+    "test": "tsc -p tsconfig.test.json && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/connectionProfileService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/localQueryData.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresConnectionManager.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresMetadataService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/sqlSafetyService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/postgresQueryExecutionService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/mutationSafetyService.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/mutationTransactionManager.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/databaseExplorerController.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/sqlSelectGenerator.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/queryBuilderModel.test.js && cross-env ELECTRON_RUN_AS_NODE=1 electron dist-test/tests/packageConfiguration.test.js && set ELECTRON_RUN_AS_NODE=&& electron dist-test/tests/safeStorageIntegration.js",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
     "better-sqlite3": "^13.0.3",
     "pg": "^8.23.0",
-    "pgsql-parser": "18.2.6",
-    "react": "latest",
-    "react-dom": "latest",
-    "typescript": "latest",
-    "vite": "latest"
+    "pgsql-parser": "18.2.6"
   },
   "devDependencies": {
     "@eslint/js": "latest",
@@ -30,6 +25,7 @@
     "@types/pg": "^8.21.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
     "concurrently": "latest",
     "cross-env": "latest",
     "electron": "latest",
@@ -38,7 +34,11 @@
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
     "typescript-eslint": "latest",
+    "vite": "latest",
     "wait-on": "latest"
   },
   "build": {
@@ -56,7 +56,10 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/better-sqlite3/prebuilds/darwin-*.node",
+      "!node_modules/better-sqlite3/prebuilds/linux*.node",
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64.node"
     ],
     "win": {
       "target": [
