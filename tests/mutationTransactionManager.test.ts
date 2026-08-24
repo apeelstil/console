@@ -7,7 +7,6 @@ import type {
   QueryAuditEvent,
   MutationActivityRecorder,
 } from '../electron/storage/queryActivityService';
-import type { CredentialStorage } from '../electron/storage/credentialStorage';
 import {
   MutationTransactionError,
   MutationTransactionManager,
@@ -347,7 +346,6 @@ test('pending gate blocks Test Connection and Connect before creating a client',
   const manager = new PostgresConnectionManager(
     () => { factoryCalls += 1; return new FakeMutationClient(); },
     { findById: () => undefined },
-    fakeCredentials,
     gate,
   );
   const request = temporaryRequest();
@@ -463,7 +461,6 @@ async function createConnectionManagerHarness() {
   const connectionManager = new PostgresConnectionManager(
     () => client,
     { findById: () => undefined },
-    fakeCredentials,
     gate,
   );
   await connectionManager.connect(temporaryRequest());
@@ -474,12 +471,6 @@ async function createConnectionManagerHarness() {
   connectionManager.setBeforeDisconnectHandler(() => manager.rollbackBeforeDisconnect());
   return { activity, client, connectionManager, gate, manager, provider: connectionManager, safety, timer };
 }
-
-const fakeCredentials: CredentialStorage = {
-  isEncryptionAvailable: () => false,
-  encrypt: () => Buffer.alloc(0),
-  decrypt: () => '',
-};
 
 function temporaryRequest(): ConnectionRequest {
   return {

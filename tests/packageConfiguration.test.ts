@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 interface PackageMetadata {
   version: string;
+  scripts: Record<string, string>;
   dependencies: Record<string, string>;
   devDependencies: Record<string, string>;
   build: {
@@ -42,4 +43,12 @@ test('portable package targets Windows x64 and excludes foreign better-sqlite3 b
   assert.ok(metadata.build.files.includes('!node_modules/better-sqlite3/prebuilds/darwin-*.node'));
   assert.ok(metadata.build.files.includes('!node_modules/better-sqlite3/prebuilds/linux*.node'));
   assert.ok(metadata.build.files.includes('!node_modules/better-sqlite3/prebuilds/win32-arm64.node'));
+});
+
+test('development, tests, and production builds remove stale Electron output before emitting files', () => {
+  assert.match(metadata.scripts.dev ?? '', /npm run clean:electron/);
+  assert.match(metadata.scripts.test ?? '', /npm run clean:electron/);
+  assert.match(metadata.scripts.build ?? '', /npm run clean:electron/);
+  assert.equal(existsSync(path.resolve('electron/storage/credentialStorage.ts')), false);
+  assert.equal(existsSync(path.resolve('dist-electron/electron/storage/credentialStorage.js')), false);
 });

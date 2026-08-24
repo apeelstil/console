@@ -50,9 +50,7 @@ function parseConnectionRequest(value: unknown): ConnectionRequest {
     return {
       source: 'profile',
       profileId: parseId(record.profileId),
-      ...(record.temporaryPassword === undefined
-        ? {}
-        : { temporaryPassword: parseString(record.temporaryPassword) }),
+      temporaryPassword: parseString(record.temporaryPassword),
     };
   }
   if (record.source === 'temporary') {

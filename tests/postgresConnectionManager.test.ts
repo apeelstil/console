@@ -11,7 +11,6 @@ import {
   type PostgresQueryResult,
 } from '../electron/postgres/postgresConnectionManager';
 import type { StoredConnectionProfile } from '../electron/storage/connectionProfileRepository';
-import type { CredentialStorage } from '../electron/storage/credentialStorage';
 
 const storedProfile: StoredConnectionProfile = {
   id: 'b157d9de-6ef2-4eae-bfea-0fb44f5036d9',
@@ -21,7 +20,6 @@ const storedProfile: StoredConnectionProfile = {
   database: 'supra_test',
   username: 'support_user',
   environment: 'TEST',
-  encryptedPassword: Buffer.from('encrypted-test-password'),
   createdAt: '2026-08-12T00:00:00.000Z',
   updatedAt: '2026-08-12T00:00:00.000Z',
 };
@@ -47,26 +45,6 @@ class FakeProfileProvider implements ConnectionProfileProvider {
   findById(id: string): StoredConnectionProfile | undefined {
     this.findCalls += 1;
     return this.profile?.id === id ? this.profile : undefined;
-  }
-}
-
-class FakeCredentialStorage implements CredentialStorage {
-  decryptCalls = 0;
-
-  constructor(private readonly decryptedPassword = 'stored-password') {}
-
-  isEncryptionAvailable(): boolean {
-    return true;
-  }
-
-  encrypt(password: string): Buffer {
-    return Buffer.from(password);
-  }
-
-  decrypt(encryptedPassword: Buffer): string {
-    assert.notEqual(encryptedPassword.length, 0);
-    this.decryptCalls += 1;
-    return this.decryptedPassword;
   }
 }
 
@@ -112,7 +90,6 @@ function createHarness(profile?: StoredConnectionProfile) {
   const clients: FakePostgresClient[] = [];
   const configs: ClientConfig[] = [];
   const profiles = new FakeProfileProvider(profile);
-  const credentials = new FakeCredentialStorage();
   const manager = new PostgresConnectionManager(
     (config) => {
       configs.push(config);
@@ -121,9 +98,8 @@ function createHarness(profile?: StoredConnectionProfile) {
       return client;
     },
     profiles,
-    credentials,
   );
-  return { manager, clients, configs, profiles, credentials };
+  return { manager, clients, configs, profiles };
 }
 
 test('Scenario A: successful test uses a temporary Client, SELECT 1, and always closes it', async () => {
@@ -154,7 +130,7 @@ test('Scenario B: failed test returns a safe error, closes the temporary Client,
     error.code = '28P01';
     throw error;
   };
-  const manager = new PostgresConnectionManager(() => client, harness.profiles, harness.credentials);
+  const manager = new PostgresConnectionManager(() => client, harness.profiles);
 
   await assert.rejects(
     () => manager.testConnection(temporaryRequest),
@@ -229,15 +205,26 @@ test('active-client callbacks are serialized to prevent metadata interleaving wi
   await harness.manager.disconnect();
 });
 
-test('Scenario E: stored credential is decrypted only inside the manager and never enters the public DTO', async () => {
+test('Scenario E: profile Test and Connect use only the password entered in the current request', async () => {
   const harness = createHarness(storedProfile);
-  const state = await harness.manager.connect({ source: 'profile', profileId: storedProfile.id });
+  const testPassword = 'current-test-password';
+  const connectPassword = 'current-connect-password';
+  await harness.manager.testConnection({
+    source: 'profile',
+    profileId: storedProfile.id,
+    temporaryPassword: testPassword,
+  });
+  const state = await harness.manager.connect({
+    source: 'profile',
+    profileId: storedProfile.id,
+    temporaryPassword: connectPassword,
+  });
 
-  assert.equal(harness.credentials.decryptCalls, 1);
-  assert.equal(harness.configs[0]?.password, 'stored-password');
+  assert.equal(harness.configs[0]?.password, testPassword);
+  assert.equal(harness.configs[1]?.password, connectPassword);
   assert.equal(state.connection?.profileId, storedProfile.id);
   assert.equal('password' in (state.connection ?? {}), false);
-  assert.equal(JSON.stringify(state).includes('stored-password'), false);
+  assert.equal(JSON.stringify(state).includes(connectPassword), false);
   await harness.manager.disconnect();
 });
 
@@ -245,22 +232,21 @@ test('Scenario F: temporary unsaved password is used without accessing or modify
   const harness = createHarness();
   await harness.manager.connect(temporaryRequest);
 
-  assert.equal(harness.credentials.decryptCalls, 0);
   assert.equal(harness.configs[0]?.password, temporaryRequest.temporaryPassword);
   assert.equal(harness.profiles.findCalls, 0);
   assert.equal(JSON.stringify(harness.manager.getConnectionState()).includes(temporaryRequest.temporaryPassword), false);
   await harness.manager.disconnect();
 });
 
-test('a temporary password overrides a stored password without replacing it', async () => {
+test('a saved profile with an empty current password is rejected without a storage fallback', async () => {
   const harness = createHarness(storedProfile);
-  const override = 'one-time-override';
-  await harness.manager.connect({ source: 'profile', profileId: storedProfile.id, temporaryPassword: override });
 
-  assert.equal(harness.credentials.decryptCalls, 0);
-  assert.equal(harness.configs[0]?.password, override);
-  assert.deepEqual(storedProfile.encryptedPassword, Buffer.from('encrypted-test-password'));
-  await harness.manager.disconnect();
+  await assert.rejects(
+    () => harness.manager.connect({ source: 'profile', profileId: storedProfile.id, temporaryPassword: '' }),
+    (error: unknown) => error instanceof ConnectionManagerError
+      && error.safeMessage === 'Введите пароль для этого подключения.',
+  );
+  assert.equal(harness.configs.length, 0);
 });
 
 test('Scenario G: a second parallel permanent Connect is blocked', async () => {
@@ -274,7 +260,6 @@ test('Scenario G: a second parallel permanent Connect is blocked', async () => {
       return firstClient;
     },
     new FakeProfileProvider(),
-    new FakeCredentialStorage(),
   );
 
   const firstConnect = manager.connect(temporaryRequest);
@@ -354,7 +339,6 @@ test('shutdown closes an in-flight Test Connection Client once', async () => {
   const manager = new PostgresConnectionManager(
     () => client,
     new FakeProfileProvider(),
-    new FakeCredentialStorage(),
   );
 
   const testOperation = manager.testConnection(temporaryRequest);

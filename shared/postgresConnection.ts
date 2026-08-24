@@ -22,7 +22,7 @@ export type ConnectionRequest =
   | {
       source: 'profile';
       profileId: string;
-      temporaryPassword?: string;
+      temporaryPassword: string;
     }
   | {
       source: 'temporary';

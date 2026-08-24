@@ -16,7 +16,6 @@ import type { MutationTransactionManager } from './postgres/mutationTransactionM
 import { PostgresOperationGate } from './postgres/postgresOperationGate';
 import { ConnectionProfileRepository } from './storage/connectionProfileRepository';
 import { ConnectionProfileService } from './storage/connectionProfileService';
-import { ElectronCredentialStorage } from './storage/credentialStorage';
 import { initializeDatabase, LOCAL_DATABASE_FILENAME } from './storage/database';
 import { SavedQueryRepository } from './storage/savedQueryRepository';
 import { SavedQueryService } from './storage/savedQueryService';
@@ -159,11 +158,7 @@ void app.whenReady().then(() => {
     const databasePath = path.join(app.getPath('userData'), LOCAL_DATABASE_FILENAME);
     localDatabase = initializeDatabase(databasePath);
     const profileRepository = new ConnectionProfileRepository(localDatabase);
-    const credentialStorage = new ElectronCredentialStorage();
-    profileService = new ConnectionProfileService(
-      profileRepository,
-      credentialStorage,
-    );
+    profileService = new ConnectionProfileService(profileRepository);
     savedQueryService = new SavedQueryService(new SavedQueryRepository(localDatabase));
     queryActivityService = new LocalQueryActivityService(
       new QueryHistoryRepository(localDatabase),
@@ -173,7 +168,6 @@ void app.whenReady().then(() => {
     connectionManager = new PostgresConnectionManager(
       (config) => new Client(config),
       profileRepository,
-      credentialStorage,
       postgresOperationGate,
     );
     metadataService = new PostgresMetadataService(connectionManager);

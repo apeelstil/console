@@ -5,7 +5,6 @@ import {
   type ConnectionProfile,
   type ConnectionProfileFields,
   type IpcResult,
-  type PasswordUpdate,
 } from '../../shared/connectionProfiles';
 import type { ConnectionRequest, ConnectionState } from '../../shared/postgresConnection';
 import { hasValidationErrors, validateProfileFields, type ProfileFieldErrors } from '../../shared/profileValidation';
@@ -34,14 +33,12 @@ const initialConnection: ConnectionDraft = {
   password: '',
   environment: 'DEV',
   saveProfile: false,
-  savePasswordSecurely: false,
 };
 
 export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState, onConnected }: ConnectionDialogProps) {
   const [connection, setConnection] = useState<ConnectionDraft>(initialConnection);
   const [profiles, setProfiles] = useState<ConnectionProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
-  const [removeStoredPassword, setRemoveStoredPassword] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [errors, setErrors] = useState<ProfileFieldErrors>({});
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -83,13 +80,11 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
     setConnection((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
     if (key === 'environment') onEnvironmentChange(value as ConnectionEnvironment);
-    if (key === 'password' && value) setRemoveStoredPassword(false);
   };
 
   const startNewProfile = () => {
     setConnection(initialConnection);
     setSelectedProfileId(null);
-    setRemoveStoredPassword(false);
     setConfirmingDelete(false);
     setErrors({});
     setNotice(null);
@@ -107,9 +102,7 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
       password: '',
       environment: profile.environment,
       saveProfile: true,
-      savePasswordSecurely: profile.hasStoredPassword,
     });
-    setRemoveStoredPassword(false);
     setConfirmingDelete(false);
     setErrors({});
     setNotice(null);
@@ -127,10 +120,6 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
 
     const fields = toProfileFields(connection);
     const nextErrors = validateProfileFields(fields);
-    const hasExistingPassword = selectedProfile?.hasStoredPassword === true && !removeStoredPassword;
-    if (connection.savePasswordSecurely && !connection.password && !hasExistingPassword) {
-      nextErrors.password = 'Введите пароль для безопасного сохранения.';
-    }
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
 
@@ -146,13 +135,8 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
         ? await api.updateProfile({
             id: selectedProfile.id,
             ...fields,
-            passwordUpdate: getPasswordUpdate(connection, removeStoredPassword),
           })
-        : await api.createProfile({
-            ...fields,
-            password: connection.password,
-            savePasswordSecurely: connection.savePasswordSecurely,
-          });
+        : await api.createProfile(fields);
 
       if (!result.ok) {
         setNotice({ kind: 'error', message: result.error });
@@ -195,15 +179,14 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
 
     setProfiles((current) => current.filter((profile) => profile.id !== selectedProfile.id));
     startNewProfile();
-    setNotice({ kind: 'success', message: 'Профиль подключения и сохранённый пароль удалены.' });
+    setNotice({ kind: 'success', message: 'Профиль подключения удалён.' });
   };
 
   const runConnectionAction = async (action: 'testing' | 'connecting') => {
     setNotice(null);
     const fields = toProfileFields(connection);
     const nextErrors = validateProfileFields(fields);
-    const canUseStoredPassword = selectedProfile?.hasStoredPassword === true && !removeStoredPassword;
-    if (!connection.password && !canUseStoredPassword) {
+    if (!connection.password) {
       nextErrors.password = 'Введите пароль для этого подключения.';
     }
     setErrors(nextErrors);
@@ -271,7 +254,6 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
                 >
                   <span className={`environment-badge ${profile.environment.toLowerCase()}`}>{profile.environment}</span>
                   <span className="profile-summary"><strong>{profile.name}</strong><small>{profile.host}:{profile.port}</small></span>
-                  {profile.hasStoredPassword && <span className="profile-lock" title="Пароль сохранён безопасно">●</span>}
                 </button>
               ))}
             </div>
@@ -304,26 +286,18 @@ export function ConnectionDialog({ onClose, onEnvironmentChange, connectionState
               <Field label="Пользователь" error={errors.username} className="full">
                 <input value={connection.username} onChange={(event) => update('username', event.target.value)} aria-invalid={Boolean(errors.username)} autoComplete="off" placeholder="Имя пользователя" />
               </Field>
-              <Field label={selectedProfile?.hasStoredPassword ? 'Новый пароль' : 'Пароль'} error={errors.password} className="full">
-                <PasswordInput value={connection.password} onChange={(event) => update('password', event.target.value)} aria-invalid={Boolean(errors.password)} autoComplete="new-password" placeholder={selectedProfile?.hasStoredPassword ? 'Оставьте пустым, чтобы сохранить текущий пароль' : 'Пароль'} />
+              <Field label="Пароль" error={errors.password} className="full">
+                <PasswordInput value={connection.password} onChange={(event) => update('password', event.target.value)} aria-invalid={Boolean(errors.password)} autoComplete="new-password" placeholder="Пароль" />
               </Field>
             </div>
 
-            {selectedProfile?.hasStoredPassword && !removeStoredPassword && (
-              <div className="password-state"><span>✓ Пароль сохранён безопасно</span><button type="button" onClick={() => { setRemoveStoredPassword(true); update('savePasswordSecurely', false); }}>Удалить сохранённый пароль</button></div>
-            )}
-            {removeStoredPassword && (
-              <div className="password-state remove"><span>Сохранённый пароль будет удалён</span><button type="button" onClick={() => { setRemoveStoredPassword(false); update('savePasswordSecurely', true); }}>Отменить</button></div>
-            )}
-
             <label className="check"><input type="checkbox" checked={connection.saveProfile} onChange={(event) => update('saveProfile', event.target.checked)} /> Сохранить профиль</label>
-            <label className="check"><input type="checkbox" checked={connection.savePasswordSecurely} disabled={removeStoredPassword} onChange={(event) => update('savePasswordSecurely', event.target.checked)} /> Сохранить пароль безопасно</label>
 
             {notice && <div className={`notice ${notice.kind}`} role="status">ⓘ {notice.message}</div>}
 
             {confirmingDelete && selectedProfile && (
               <div className="delete-confirmation">
-                <span>Удалить «{selectedProfile.name}» и сохранённый пароль?</span>
+                <span>Удалить «{selectedProfile.name}»?</span>
                 <div><button type="button" className="danger" disabled={saving} onClick={() => void deleteProfile()}>Удалить</button><button type="button" className="secondary" onClick={() => setConfirmingDelete(false)}>Отмена</button></div>
               </div>
             )}
@@ -364,20 +338,12 @@ function toProfileFields(connection: ConnectionDraft): ConnectionProfileFields {
   };
 }
 
-function getPasswordUpdate(connection: ConnectionDraft, removeStoredPassword: boolean): PasswordUpdate {
-  if (removeStoredPassword) return { mode: 'remove' };
-  if (connection.password && connection.savePasswordSecurely) {
-    return { mode: 'replace', password: connection.password };
-  }
-  return { mode: 'keep' };
-}
-
 function toConnectionRequest(connection: ConnectionDraft, selectedProfile?: ConnectionProfile): ConnectionRequest {
   if (selectedProfile) {
     return {
       source: 'profile',
       profileId: selectedProfile.id,
-      ...(connection.password ? { temporaryPassword: connection.password } : {}),
+      temporaryPassword: connection.password,
     };
   }
   return {

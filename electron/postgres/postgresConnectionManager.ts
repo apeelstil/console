@@ -8,7 +8,6 @@ import type {
 import { hasValidationErrors, validateProfileFields } from '../../shared/profileValidation';
 import { USER_MESSAGES } from '../../shared/userMessages';
 import type { StoredConnectionProfile } from '../storage/connectionProfileRepository';
-import type { CredentialStorage } from '../storage/credentialStorage';
 import {
   PostgresOperationBlockedError,
   PostgresOperationGate,
@@ -82,7 +81,6 @@ export class PostgresConnectionManager {
   constructor(
     private readonly createClient: PostgresClientFactory,
     private readonly profiles: ConnectionProfileProvider,
-    private readonly credentials: CredentialStorage,
     private readonly operationGate: PostgresOperationGate = new PostgresOperationGate(),
   ) {}
 
@@ -248,11 +246,10 @@ export class PostgresConnectionManager {
       const profile = this.profiles.findById(request.profileId);
       if (!profile) throw new ConnectionManagerError('Выбранный профиль подключения больше не существует.');
 
-      const password = request.temporaryPassword || this.decryptStoredPassword(profile);
-      if (!password) throw new ConnectionManagerError('Введите пароль для этого подключения.');
+      if (!request.temporaryPassword) throw new ConnectionManagerError('Введите пароль для этого подключения.');
       return {
         metadata: toActiveConnectionInfo(profile),
-        password,
+        password: request.temporaryPassword,
       };
     }
 
@@ -266,19 +263,6 @@ export class PostgresConnectionManager {
       metadata: normalizeConnectionInfo(request.connection),
       password: request.temporaryPassword,
     };
-  }
-
-  private decryptStoredPassword(profile: StoredConnectionProfile): string {
-    if (!profile.encryptedPassword) return '';
-    if (!this.credentials.isEncryptionAvailable()) {
-      throw new ConnectionManagerError('Шифрование учётных данных Windows недоступно. Введите пароль вручную.');
-    }
-
-    try {
-      return this.credentials.decrypt(profile.encryptedPassword);
-    } catch {
-      throw new ConnectionManagerError('Не удалось расшифровать сохранённый пароль. Введите пароль вручную.');
-    }
   }
 
   private assertOperationAllowed(operation: 'test' | 'connect'): void {

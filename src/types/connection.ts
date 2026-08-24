@@ -11,5 +11,4 @@ export interface ConnectionDraft {
   password: string;
   environment: ConnectionEnvironment;
   saveProfile: boolean;
-  savePasswordSecurely: boolean;
 }

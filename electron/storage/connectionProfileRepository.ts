@@ -9,14 +9,12 @@ interface ConnectionProfileRow {
   database_name: string;
   username: string;
   environment: ConnectionEnvironment;
-  encrypted_password: Buffer | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface StoredConnectionProfile extends ConnectionProfileFields {
   id: string;
-  encryptedPassword: Buffer | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,7 +27,6 @@ interface InsertProfileParameters {
   databaseName: string;
   username: string;
   environment: ConnectionEnvironment;
-  encryptedPassword: Buffer | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,7 +35,7 @@ type UpdateProfileParameters = InsertProfileParameters;
 
 const profileColumns = `
   id, name, host, port, database_name, username, environment,
-  encrypted_password, created_at, updated_at
+  created_at, updated_at
 `;
 
 export class ConnectionProfileRepository {
@@ -72,10 +69,10 @@ export class ConnectionProfileRepository {
     this.database.prepare<InsertProfileParameters>(`
       INSERT INTO connection_profiles (
         id, name, host, port, database_name, username, environment,
-        encrypted_password, created_at, updated_at
+        created_at, updated_at
       ) VALUES (
         @id, @name, @host, @port, @databaseName, @username, @environment,
-        @encryptedPassword, @createdAt, @updatedAt
+        @createdAt, @updatedAt
       )
     `).run(toParameters(profile));
 
@@ -91,7 +88,6 @@ export class ConnectionProfileRepository {
           database_name = @databaseName,
           username = @username,
           environment = @environment,
-          encrypted_password = @encryptedPassword,
           updated_at = @updatedAt
       WHERE id = @id
     `).run(toParameters(profile));
@@ -117,7 +113,6 @@ function mapRow(row: ConnectionProfileRow): StoredConnectionProfile {
     database: row.database_name,
     username: row.username,
     environment: row.environment,
-    encryptedPassword: row.encrypted_password,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -132,7 +127,6 @@ function toParameters(profile: StoredConnectionProfile): InsertProfileParameters
     databaseName: profile.database,
     username: profile.username,
     environment: profile.environment,
-    encryptedPassword: profile.encryptedPassword,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
   };

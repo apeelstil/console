@@ -6,7 +6,6 @@ import type {
   UpdateConnectionProfileInput,
 } from '../../shared/connectionProfiles';
 import { hasValidationErrors, validateProfileFields } from '../../shared/profileValidation';
-import type { CredentialStorage } from './credentialStorage';
 import type { ConnectionProfileRepository, StoredConnectionProfile } from './connectionProfileRepository';
 
 export class ProfileServiceError extends Error {
@@ -17,10 +16,7 @@ export class ProfileServiceError extends Error {
 }
 
 export class ConnectionProfileService {
-  constructor(
-    private readonly repository: ConnectionProfileRepository,
-    private readonly credentials: CredentialStorage,
-  ) {}
+  constructor(private readonly repository: ConnectionProfileRepository) {}
 
   listProfiles(): ConnectionProfile[] {
     return this.repository.list().map(toPublicProfile);
@@ -30,16 +26,10 @@ export class ConnectionProfileService {
     const fields = normalizeFields(input);
     assertValidFields(fields);
 
-    let encryptedPassword: Buffer | null = null;
-    if (input.savePasswordSecurely) {
-      encryptedPassword = this.encryptPassword(input.password);
-    }
-
     const timestamp = new Date().toISOString();
     const stored = this.repository.create({
       id: randomUUID(),
       ...fields,
-      encryptedPassword,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
@@ -54,17 +44,9 @@ export class ConnectionProfileService {
     const fields = normalizeFields(input);
     assertValidFields(fields);
 
-    let encryptedPassword = current.encryptedPassword;
-    if (input.passwordUpdate.mode === 'remove') {
-      encryptedPassword = null;
-    } else if (input.passwordUpdate.mode === 'replace') {
-      encryptedPassword = this.encryptPassword(input.passwordUpdate.password);
-    }
-
     const stored = this.repository.update({
       ...current,
       ...fields,
-      encryptedPassword,
       updatedAt: new Date().toISOString(),
     });
 
@@ -77,20 +59,6 @@ export class ConnectionProfileService {
     }
   }
 
-  private encryptPassword(password: string): Buffer {
-    if (!password) throw new ProfileServiceError('Введите пароль перед включением безопасного сохранения.');
-    if (!this.credentials.isEncryptionAvailable()) {
-      throw new ProfileServiceError(
-        'Шифрование учётных данных Windows недоступно. Пароль не сохранён. Отключите безопасное сохранение и повторите попытку.',
-      );
-    }
-
-    try {
-      return this.credentials.encrypt(password);
-    } catch {
-      throw new ProfileServiceError('Не удалось зашифровать пароль; пароль не сохранён.');
-    }
-  }
 }
 
 function normalizeFields(fields: ConnectionProfileFields): ConnectionProfileFields {
@@ -119,7 +87,6 @@ function toPublicProfile(profile: StoredConnectionProfile): ConnectionProfile {
     database: profile.database,
     username: profile.username,
     environment: profile.environment,
-    hasStoredPassword: profile.encryptedPassword !== null,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
   };

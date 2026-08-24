@@ -32,7 +32,7 @@ const identity: AuditIdentityProvider = {
   getComputerName: () => 'SUPPORT-PC',
 };
 
-test('migration 1 through 4 preserves connection profiles and creates local query tables', () => {
+test('migration 1 through 5 preserves profiles and removes legacy encrypted passwords without decrypting them', () => {
   const databasePath = nextDatabasePath();
   const legacy = new Database(databasePath);
   createVersionOneSchema(legacy);
@@ -54,20 +54,22 @@ test('migration 1 through 4 preserves connection profiles and creates local quer
   assert.equal(migrated.pragma('user_version', { simple: true }), CURRENT_SCHEMA_VERSION);
   assert.equal(profiles.length, 1);
   assert.equal(profiles[0]?.name, 'Legacy TEST');
-  assert.deepEqual(profiles[0]?.encryptedPassword, Buffer.from('legacy-ciphertext'));
+  assert.equal(profiles[0]?.host, 'legacy-host');
+  const profileColumns = migrated.pragma('table_info(connection_profiles)') as Array<{ name: string }>;
+  assert.equal(profileColumns.some((column) => column.name === 'encrypted_password'), false);
   assert.deepEqual(listTables(migrated), ['audit_log', 'connection_profiles', 'query_history', 'saved_queries']);
   migrated.close();
 });
 
-test('databases newer than schema v4 are rejected', () => {
+test('databases newer than schema v5 are rejected', () => {
   const databasePath = nextDatabasePath();
   const database = new Database(databasePath);
-  database.pragma('user_version = 5');
+  database.pragma('user_version = 6');
   database.close();
   assert.throws(() => initializeDatabase(databasePath), /newer application version/);
 });
 
-test('migration 2 through 4 preserves existing Audit rows and enables mutation outcomes', () => {
+test('migration 2 through 5 preserves existing Audit rows and enables mutation outcomes', () => {
   const databasePath = nextDatabasePath();
   const database = initializeDatabase(databasePath);
   const repository = new AuditLogRepository(database);
@@ -89,7 +91,7 @@ test('migration 2 through 4 preserves existing Audit rows and enables mutation o
   migrated.close();
 });
 
-test('migration 3 to 4 preserves activity and enables CANCELLED in History and Audit', async () => {
+test('migration 3 to 5 preserves activity and enables CANCELLED in History and Audit', async () => {
   const databasePath = nextDatabasePath();
   const database = initializeDatabase(databasePath);
   await new LocalQueryActivityService(

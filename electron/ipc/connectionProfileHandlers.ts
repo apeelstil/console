@@ -5,7 +5,6 @@ import {
   type ConnectionProfileFields,
   type CreateConnectionProfileInput,
   type IpcResult,
-  type PasswordUpdate,
   type UpdateConnectionProfileInput,
 } from '../../shared/connectionProfiles';
 import { USER_MESSAGES } from '../../shared/userMessages';
@@ -47,11 +46,7 @@ function respond<T>(
 
 function parseCreateInput(value: unknown): CreateConnectionProfileInput {
   const record = parseRecord(value);
-  return {
-    ...parseFields(record),
-    password: parseString(record.password),
-    savePasswordSecurely: parseBoolean(record.savePasswordSecurely),
-  };
+  return parseFields(record);
 }
 
 function parseUpdateInput(value: unknown): UpdateConnectionProfileInput {
@@ -59,7 +54,6 @@ function parseUpdateInput(value: unknown): UpdateConnectionProfileInput {
   return {
     id: parseId(record.id),
     ...parseFields(record),
-    passwordUpdate: parsePasswordUpdate(record.passwordUpdate),
   };
 }
 
@@ -75,13 +69,6 @@ function parseFields(record: Record<string, unknown>): ConnectionProfileFields {
     username: parseString(record.username),
     environment,
   };
-}
-
-function parsePasswordUpdate(value: unknown): PasswordUpdate {
-  const record = parseRecord(value);
-  if (record.mode === 'keep' || record.mode === 'remove') return { mode: record.mode };
-  if (record.mode === 'replace') return { mode: 'replace', password: parseString(record.password) };
-  throw invalidInput();
 }
 
 function parseId(value: unknown): string {
@@ -103,11 +90,6 @@ function parseString(value: unknown): string {
 
 function parseNumber(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw invalidInput();
-  return value;
-}
-
-function parseBoolean(value: unknown): boolean {
-  if (typeof value !== 'boolean') throw invalidInput();
   return value;
 }
 

@@ -1,6 +1,6 @@
 # SUPRA Query Console
 
-Windows desktop PostgreSQL support console. Connection profiles are stored locally in SQLite, with optional password encryption through Electron `safeStorage`. PostgreSQL Test/Connect/Disconnect, lazy metadata browsing, and validated SELECT execution use one serialized main-process `pg.Client`. The renderer-side Visual Query Builder creates quoted SELECT drafts from loaded metadata.
+Windows desktop PostgreSQL support console. Connection profile metadata is stored locally in SQLite, while PostgreSQL passwords are never persisted and must be entered manually for every Test/Connect action. PostgreSQL Test/Connect/Disconnect, lazy metadata browsing, and validated SELECT execution use one serialized main-process `pg.Client`. The renderer-side Visual Query Builder creates quoted SELECT drafts from loaded metadata.
 
 User SQL is parsed with `pgsql-parser` before every execution. SELECT keeps its Stage 6 path: only one AST-validated SELECT is accepted, it runs inside a `READ ONLY` transaction with a transaction-local 15 second timeout, a server-side 1001-row fetch cap, and an unconditional `ROLLBACK`; at most 1000 normalized rows reach the renderer.
 
@@ -18,7 +18,7 @@ Audit records the Windows username and computer name, database target, environme
 
 ## v1 Release Candidate status
 
-SUPRA Query Console `1.0.0-rc.1` provides local connection profiles with optional secure password storage, PostgreSQL metadata browsing, a visual SELECT builder, guarded SELECT execution with real cancellation, confirmed INSERT/UPDATE transactions, Saved Queries, Query History, and a local Audit Log. Its UI is optimized for a compact enterprise desktop workflow with a persistent Database Explorer, SQL workspace, dense results, and explicit connection/operation status.
+SUPRA Query Console `1.0.0-rc.1` provides local connection profiles without password storage, PostgreSQL metadata browsing, a visual SELECT builder, guarded SELECT execution with real cancellation, confirmed INSERT/UPDATE transactions, Saved Queries, Query History, and a local Audit Log. Its UI is optimized for a compact enterprise desktop workflow with a persistent Database Explorer, SQL workspace, dense results, and explicit connection/operation status.
 
 DELETE, TRUNCATE, MERGE, DDL, arbitrary transaction control, multiple statements, and unsafe UPDATE remain intentionally blocked. Production connections are permanently marked in the UI; use a least-privilege database account, review every mutation, and never run mutation smoke tests against PROD. The portable build targets Windows 10/11 x64 and does not require installation.
 

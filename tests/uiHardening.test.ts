@@ -38,13 +38,24 @@ test('Space and Enter reveal only between keydown and keyup', () => {
   assert.equal(nextPasswordRevealState(false, { type: 'keydown', key: 'Escape' }), false);
 });
 
-test('password reveal is renderer-only and does not alter credential storage', () => {
+test('password reveal remains renderer-only while profile password persistence is absent', () => {
   const revealSource = source('src/passwordReveal.ts');
-  const credentialSource = source('electron/storage/credentialStorage.ts');
+  const dialogSource = source('src/components/ConnectionDialog.tsx');
+  const repositorySource = source('electron/storage/connectionProfileRepository.ts');
+  const managerSource = source('electron/postgres/postgresConnectionManager.ts');
 
   assert.doesNotMatch(revealSource, /clipboard|localStorage|sessionStorage|ipcRenderer|safeStorage/i);
-  assert.match(credentialSource, /safeStorage\.encryptString/);
-  assert.match(credentialSource, /safeStorage\.decryptString/);
+  assert.doesNotMatch(dialogSource, /savePasswordSecurely|hasStoredPassword|Сохранить пароль/);
+  assert.doesNotMatch(repositorySource, /encrypted_password|encryptedPassword/);
+  assert.doesNotMatch(managerSource, /decryptStoredPassword|safeStorage|CredentialStorage/);
+});
+
+test('selecting a saved profile clears Password and profile requests use only the current field', () => {
+  const dialogSource = source('src/components/ConnectionDialog.tsx');
+
+  assert.match(dialogSource, /const selectProfile[\s\S]*password: ''/);
+  assert.match(dialogSource, /source: 'profile'[\s\S]*temporaryPassword: connection\.password/);
+  assert.match(dialogSource, /if \(!connection\.password\)/);
 });
 
 test('the connection password field wires accessible pointer and keyboard hold events', () => {

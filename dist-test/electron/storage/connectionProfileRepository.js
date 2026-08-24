@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConnectionProfileRepository = void 0;
 const profileColumns = `
   id, name, host, port, database_name, username, environment,
-  encrypted_password, created_at, updated_at
+  created_at, updated_at
 `;
 class ConnectionProfileRepository {
     database;
@@ -34,10 +34,10 @@ class ConnectionProfileRepository {
         this.database.prepare(`
       INSERT INTO connection_profiles (
         id, name, host, port, database_name, username, environment,
-        encrypted_password, created_at, updated_at
+        created_at, updated_at
       ) VALUES (
         @id, @name, @host, @port, @databaseName, @username, @environment,
-        @encryptedPassword, @createdAt, @updatedAt
+        @createdAt, @updatedAt
       )
     `).run(toParameters(profile));
         return profile;
@@ -51,7 +51,6 @@ class ConnectionProfileRepository {
           database_name = @databaseName,
           username = @username,
           environment = @environment,
-          encrypted_password = @encryptedPassword,
           updated_at = @updatedAt
       WHERE id = @id
     `).run(toParameters(profile));
@@ -76,7 +75,6 @@ function mapRow(row) {
         database: row.database_name,
         username: row.username,
         environment: row.environment,
-        encryptedPassword: row.encrypted_password,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
     };
@@ -90,7 +88,6 @@ function toParameters(profile) {
         databaseName: profile.database,
         username: profile.username,
         environment: profile.environment,
-        encryptedPassword: profile.encryptedPassword,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
     };

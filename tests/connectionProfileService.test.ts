@@ -5,7 +5,6 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 import { ConnectionProfileRepository } from '../electron/storage/connectionProfileRepository';
 import { ConnectionProfileService, ProfileServiceError } from '../electron/storage/connectionProfileService';
-import type { CredentialStorage } from '../electron/storage/credentialStorage';
 import { CURRENT_SCHEMA_VERSION, initializeDatabase } from '../electron/storage/database';
 import { isProductionEnvironment, type ConnectionProfileFields } from '../shared/connectionProfiles';
 
@@ -23,136 +22,92 @@ const testFields: ConnectionProfileFields = {
   environment: 'TEST',
 };
 
-class FakeCredentialStorage implements CredentialStorage {
-  private sequence = 0;
-
-  constructor(private readonly available = true) {}
-
-  isEncryptionAvailable(): boolean {
-    return this.available;
-  }
-
-  encrypt(password: string): Buffer {
-    void password;
-    this.sequence += 1;
-    return Buffer.from(`test-cipher-${this.sequence}`);
-  }
-
-  decrypt(encryptedPassword: Buffer): string {
-    void encryptedPassword;
-    throw new Error('Decryption is not used by profile management.');
-  }
-}
-
 function createFileDatabase() {
   databaseSequence += 1;
   const databasePath = path.join(testDirectory, `profiles-${databaseSequence}.db`);
   return { databasePath, database: initializeDatabase(databasePath) };
 }
 
-test('Scenario A: profile metadata persists after closing and reopening SQLite', () => {
+test('profile metadata persists after restart without a password column or password DTO fields', () => {
   const { databasePath, database } = createFileDatabase();
-  const service = new ConnectionProfileService(new ConnectionProfileRepository(database), new FakeCredentialStorage());
-  const created = service.createProfile({ ...testFields, password: '', savePasswordSecurely: false });
+  const service = new ConnectionProfileService(new ConnectionProfileRepository(database));
+  const inputWithIgnoredSecret = { ...testFields, password: 'must-never-be-stored' };
+  const created = service.createProfile(inputWithIgnoredSecret);
   database.close();
 
   const reopenedDatabase = initializeDatabase(databasePath);
-  const reopenedService = new ConnectionProfileService(new ConnectionProfileRepository(reopenedDatabase), new FakeCredentialStorage());
+  const reopenedService = new ConnectionProfileService(new ConnectionProfileRepository(reopenedDatabase));
   const profiles = reopenedService.listProfiles();
+  const columns = reopenedDatabase.pragma('table_info(connection_profiles)') as Array<{ name: string }>;
 
   assert.equal(profiles.length, 1);
   assert.equal(profiles[0]?.id, created.id);
-  assert.equal(profiles[0]?.hasStoredPassword, false);
+  assert.equal(profiles[0]?.host, testFields.host);
+  assert.equal('password' in (profiles[0] ?? {}), false);
+  assert.equal('hasStoredPassword' in (profiles[0] ?? {}), false);
+  assert.equal(columns.some((column) => column.name === 'encrypted_password'), false);
   assert.equal(reopenedDatabase.pragma('user_version', { simple: true }), CURRENT_SCHEMA_VERSION);
   reopenedDatabase.close();
 });
 
-test('Scenario B: public profile exposes only hasStoredPassword, never password or ciphertext', () => {
+test('all non-secret profile fields continue to be saved and updated', () => {
   const { database } = createFileDatabase();
-  const repository = new ConnectionProfileRepository(database);
-  const service = new ConnectionProfileService(repository, new FakeCredentialStorage());
-  const profile = service.createProfile({ ...testFields, password: 'not-returned', savePasswordSecurely: true });
-
-  assert.equal(profile.hasStoredPassword, true);
-  assert.equal('password' in profile, false);
-  assert.equal('encryptedPassword' in profile, false);
-  assert.equal('encrypted_password' in profile, false);
-  assert.notEqual(repository.findById(profile.id)?.encryptedPassword, null);
-  database.close();
-});
-
-test('Scenario C: metadata update keeps existing encrypted password when password mode is keep', () => {
-  const { database } = createFileDatabase();
-  const repository = new ConnectionProfileRepository(database);
-  const service = new ConnectionProfileService(repository, new FakeCredentialStorage());
-  const created = service.createProfile({ ...testFields, password: 'first-password', savePasswordSecurely: true });
-  const originalCiphertext = Buffer.from(repository.findById(created.id)?.encryptedPassword ?? []);
-
+  const service = new ConnectionProfileService(new ConnectionProfileRepository(database));
+  const created = service.createProfile(testFields);
   const updated = service.updateProfile({
     ...testFields,
     id: created.id,
     name: 'SUPRA TEST EDITED',
-    passwordUpdate: { mode: 'keep' },
+    host: 'edited-host',
+    port: 5433,
+    database: 'edited_database',
+    username: 'edited_user',
+    environment: 'DEV',
   });
 
-  assert.equal(updated.name, 'SUPRA TEST EDITED');
-  assert.equal(updated.hasStoredPassword, true);
-  assert.deepEqual(repository.findById(created.id)?.encryptedPassword, originalCiphertext);
+  assert.deepEqual(
+    {
+      name: updated.name,
+      host: updated.host,
+      port: updated.port,
+      database: updated.database,
+      username: updated.username,
+      environment: updated.environment,
+    },
+    {
+      name: 'SUPRA TEST EDITED',
+      host: 'edited-host',
+      port: 5433,
+      database: 'edited_database',
+      username: 'edited_user',
+      environment: 'DEV',
+    },
+  );
   database.close();
 });
 
-test('Scenario D: replacing a password replaces the old ciphertext', () => {
+test('deleting one profile leaves other profiles untouched', () => {
   const { database } = createFileDatabase();
-  const repository = new ConnectionProfileRepository(database);
-  const service = new ConnectionProfileService(repository, new FakeCredentialStorage());
-  const created = service.createProfile({ ...testFields, password: 'first-password', savePasswordSecurely: true });
-  const originalCiphertext = Buffer.from(repository.findById(created.id)?.encryptedPassword ?? []);
-
-  service.updateProfile({
-    ...testFields,
-    id: created.id,
-    passwordUpdate: { mode: 'replace', password: 'second-password' },
-  });
-
-  assert.notDeepEqual(repository.findById(created.id)?.encryptedPassword, originalCiphertext);
-  database.close();
-});
-
-test('Scenario E: deleting one profile removes it and leaves other profiles untouched', () => {
-  const { database } = createFileDatabase();
-  const service = new ConnectionProfileService(new ConnectionProfileRepository(database), new FakeCredentialStorage());
-  const first = service.createProfile({ ...testFields, password: 'stored', savePasswordSecurely: true });
-  const second = service.createProfile({ ...testFields, name: 'SUPRA DEV', environment: 'DEV', password: '', savePasswordSecurely: false });
+  const service = new ConnectionProfileService(new ConnectionProfileRepository(database));
+  const first = service.createProfile(testFields);
+  const second = service.createProfile({ ...testFields, name: 'SUPRA DEV', environment: 'DEV' });
 
   service.deleteProfile(first.id);
-  const profiles = service.listProfiles();
 
-  assert.deepEqual(profiles.map((profile) => profile.id), [second.id]);
+  assert.deepEqual(service.listProfiles().map((profile) => profile.id), [second.id]);
   database.close();
 });
 
-test('Scenario F: PROD environment activates the production UI condition', () => {
+test('PROD environment still activates the production UI condition', () => {
   assert.equal(isProductionEnvironment('PROD'), true);
   assert.equal(isProductionEnvironment('TEST'), false);
   assert.equal(isProductionEnvironment('DEV'), false);
   assert.equal(isProductionEnvironment('OTHER'), false);
 });
 
-test('secure password saving fails closed when encryption is unavailable', () => {
-  const { database } = createFileDatabase();
-  const service = new ConnectionProfileService(new ConnectionProfileRepository(database), new FakeCredentialStorage(false));
-
-  assert.throws(
-    () => service.createProfile({ ...testFields, password: 'must-not-be-stored', savePasswordSecurely: true }),
-    (error: unknown) => error instanceof ProfileServiceError && error.safeMessage.includes('недоступно'),
-  );
-  assert.equal(service.listProfiles().length, 0);
-  database.close();
-});
-
 test('SQLite constraints and service validation reject invalid metadata', () => {
   const { database } = createFileDatabase();
-  const service = new ConnectionProfileService(new ConnectionProfileRepository(database), new FakeCredentialStorage());
+  const service = new ConnectionProfileService(new ConnectionProfileRepository(database));
 
   for (const invalidFields of [
     { ...testFields, name: ' ' },
@@ -163,10 +118,7 @@ test('SQLite constraints and service validation reject invalid metadata', () => 
     { ...testFields, database: '' },
     { ...testFields, username: '' },
   ]) {
-    assert.throws(
-      () => service.createProfile({ ...invalidFields, password: '', savePasswordSecurely: false }),
-      ProfileServiceError,
-    );
+    assert.throws(() => service.createProfile(invalidFields), ProfileServiceError);
   }
   assert.equal(service.listProfiles().length, 0);
   database.close();

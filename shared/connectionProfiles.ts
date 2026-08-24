@@ -19,24 +19,14 @@ export interface ConnectionProfileFields {
 
 export interface ConnectionProfile extends ConnectionProfileFields {
   id: string;
-  hasStoredPassword: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CreateConnectionProfileInput extends ConnectionProfileFields {
-  password: string;
-  savePasswordSecurely: boolean;
-}
-
-export type PasswordUpdate =
-  | { mode: 'keep' }
-  | { mode: 'remove' }
-  | { mode: 'replace'; password: string };
+export type CreateConnectionProfileInput = ConnectionProfileFields;
 
 export interface UpdateConnectionProfileInput extends ConnectionProfileFields {
   id: string;
-  passwordUpdate: PasswordUpdate;
 }
 
 export type IpcResult<T> =

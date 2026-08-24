@@ -7,7 +7,7 @@ exports.CURRENT_SCHEMA_VERSION = exports.LOCAL_DATABASE_FILENAME = void 0;
 exports.initializeDatabase = initializeDatabase;
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 exports.LOCAL_DATABASE_FILENAME = 'supra-console.db';
-exports.CURRENT_SCHEMA_VERSION = 4;
+exports.CURRENT_SCHEMA_VERSION = 5;
 function initializeDatabase(databasePath) {
     const database = new better_sqlite3_1.default(databasePath);
     database.pragma('foreign_keys = ON');
@@ -33,7 +33,6 @@ function initializeDatabase(databasePath) {
           database_name TEXT NOT NULL CHECK (length(trim(database_name)) > 0),
           username TEXT NOT NULL CHECK (length(trim(username)) > 0),
           environment TEXT NOT NULL CHECK (environment IN ('PROD', 'TEST', 'DEV', 'OTHER')),
-          encrypted_password BLOB,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         ) STRICT;
@@ -223,6 +222,38 @@ function initializeDatabase(databasePath) {
             database.pragma('user_version = 4');
         });
         migrateToVersionFour();
+    }
+    if (database.pragma('user_version', { simple: true }) === 4) {
+        const migrateToVersionFive = database.transaction(() => {
+            database.exec(`
+        ALTER TABLE connection_profiles RENAME TO connection_profiles_v4;
+
+        CREATE TABLE connection_profiles (
+          id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+          name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+          host TEXT NOT NULL CHECK (length(trim(host)) > 0),
+          port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+          database_name TEXT NOT NULL CHECK (length(trim(database_name)) > 0),
+          username TEXT NOT NULL CHECK (length(trim(username)) > 0),
+          environment TEXT NOT NULL CHECK (environment IN ('PROD', 'TEST', 'DEV', 'OTHER')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO connection_profiles (
+          id, name, host, port, database_name, username, environment,
+          created_at, updated_at
+        )
+        SELECT
+          id, name, host, port, database_name, username, environment,
+          created_at, updated_at
+        FROM connection_profiles_v4;
+
+        DROP TABLE connection_profiles_v4;
+      `);
+            database.pragma('user_version = 5');
+        });
+        migrateToVersionFive();
     }
     return database;
 }
