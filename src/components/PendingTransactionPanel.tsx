@@ -41,8 +41,8 @@ export function PendingTransactionPanel({
           <div className="rollback-countdown"><dt>Автооткат</dt><dd>{formatCountdown(summary.remainingSeconds)}</dd></div>
         </dl>
         <div className="pending-transaction-actions">
-          <button type="button" className="rollback-action" disabled={Boolean(busyAction)} onClick={onRollback}>{busyAction === 'ROLLBACK' ? 'ОТКАТ…' : 'ROLLBACK'}</button>
-          <button type="button" className="commit-action" disabled={Boolean(busyAction)} onClick={onCommit}>{busyAction === 'COMMIT' ? 'ФИКСАЦИЯ…' : 'COMMIT'}</button>
+          <button type="button" className="rollback-action" disabled={Boolean(busyAction)} onClick={onRollback}>{busyAction === 'ROLLBACK' ? 'Откат…' : 'Откатить'}</button>
+          <button type="button" className="commit-action" disabled={Boolean(busyAction)} onClick={onCommit}>{busyAction === 'COMMIT' ? 'Фиксация…' : 'Зафиксировать'}</button>
         </div>
       </div>
       {transaction.storageWarnings?.map((warning) => <div className="storage-warning" key={warning}>{warning}</div>)}

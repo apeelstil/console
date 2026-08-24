@@ -1504,14 +1504,38 @@ textarea {
 
 .pending-transaction-panel.compact .rollback-action {
   color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #b4232f;
+  border-color: #8f1d27;
 }
 
 .pending-transaction-panel.compact .commit-action {
-  color: #77500d;
-  background: #fff3d7;
-  border-color: #c99c49;
+  color: #fff;
+  background: #16814c;
+  border-color: #11683d;
+}
+
+.pending-transaction-panel.compact .rollback-action:hover:not(:disabled) {
+  background: #921b25;
+  border-color: #74151d;
+}
+
+.pending-transaction-panel.compact .commit-action:hover:not(:disabled) {
+  background: #11683d;
+  border-color: #0d5130;
+}
+
+.pending-transaction-panel.compact .rollback-action:focus-visible,
+.pending-transaction-panel.compact .commit-action:focus-visible {
+  outline: 2px solid #173e67;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.pending-transaction-panel.compact .rollback-action:disabled,
+.pending-transaction-panel.compact .commit-action:disabled {
+  color: #fff;
+  opacity: .55;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1180px) {

@@ -91,7 +91,7 @@ test('compact pending summary exposes operation, table, affected rows, and count
   assert.equal(summary.transactionId, transaction.transactionId);
 });
 
-test('pending transaction component stays compact and keeps ROLLBACK as the default action', () => {
+test('pending transaction component uses Russian action labels and stays compact', () => {
   const panelSource = source('src/components/PendingTransactionPanel.tsx');
 
   assert.match(panelSource, /pending-transaction-panel compact/);
@@ -99,15 +99,42 @@ test('pending transaction component stays compact and keeps ROLLBACK as the defa
   assert.match(panelSource, /summary\.table/);
   assert.match(panelSource, /summary\.affectedRows/);
   assert.match(panelSource, /summary\.remainingSeconds/);
-  assert.match(panelSource, /rollback-action[\s\S]*'ROLLBACK'/);
-  assert.match(panelSource, /commit-action[\s\S]*'COMMIT'/);
+  assert.match(panelSource, /rollback-action[\s\S]*'Откатить'/);
+  assert.match(panelSource, /commit-action[\s\S]*'Зафиксировать'/);
+  assert.doesNotMatch(panelSource, /\?\s*'[^']*'\s*:\s*'ROLLBACK'/);
+  assert.doesNotMatch(panelSource, /\?\s*'[^']*'\s*:\s*'COMMIT'/);
   assert.doesNotMatch(panelSource, /transaction\.sqlText/);
+});
+
+test('pending transaction action labels call the existing rollback and commit handlers', () => {
+  const panelSource = source('src/components/PendingTransactionPanel.tsx');
+
+  assert.match(panelSource, /className="rollback-action"[\s\S]*onClick=\{onRollback\}/);
+  assert.match(panelSource, /className="commit-action"[\s\S]*onClick=\{onCommit\}/);
 });
 
 test('COMMIT and ROLLBACK continue to use the current transaction ID', () => {
   const appSource = source('src/App.tsx');
+  const managerSource = source('electron/postgres/mutationTransactionManager.ts');
   assert.match(appSource, /commitMutation\(mutationState\.transactionId\)/);
   assert.match(appSource, /rollbackMutation\(mutationState\.transactionId\)/);
+  assert.match(managerSource, /const COMMIT_SQL = 'COMMIT;'/);
+  assert.match(managerSource, /const ROLLBACK_SQL = 'ROLLBACK;'/);
+  assert.match(managerSource, /transactionEvent\(pending, 'COMMIT', 'COMMITTED'\)/);
+  assert.match(managerSource, /transactionEvent\(pending, 'ROLLBACK', outcome\)/);
+});
+
+test('pending action colors cover normal, hover, focus, and disabled states', () => {
+  const styles = source('src/styles.css');
+
+  assert.match(styles, /\.rollback-action \{[\s\S]*background: #b4232f/);
+  assert.match(styles, /\.commit-action \{[\s\S]*background: #16814c/);
+  assert.match(styles, /\.rollback-action:hover:not\(:disabled\)/);
+  assert.match(styles, /\.commit-action:hover:not\(:disabled\)/);
+  assert.match(styles, /\.rollback-action:focus-visible/);
+  assert.match(styles, /\.commit-action:focus-visible/);
+  assert.match(styles, /\.rollback-action:disabled/);
+  assert.match(styles, /\.commit-action:disabled/);
 });
 
 test('compact UI keeps the existing 120 second automatic rollback contract', () => {
