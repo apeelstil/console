@@ -8,7 +8,9 @@ import type {
 import {
   PostgresQueryExecutionService,
   QueryExecutionError,
+  QueryOperationError,
   type ExclusiveActiveClientProvider,
+  type SelectQueryRunner,
   type SelectSafetyValidator,
 } from '../electron/postgres/postgresQueryExecutionService';
 import type {
@@ -266,6 +268,117 @@ test('18: Result DTO normalizes dates, JSON, bigint, binary, and excludes sensit
   assert.equal('queryImplementation' in result, false);
 });
 
+test('19: successful cancellation sends one request, rolls back, and records CANCELLED', async () => {
+  const harness = createCancellationHarness();
+  const execution = harness.service.executeSelect('SELECT pg_sleep(10)');
+  await harness.runner.started.promise;
+  const operation = harness.service.getState();
+  assert.equal(operation.status, 'EXECUTING');
+  if (operation.status !== 'EXECUTING') return;
+
+  const cancellationState = await harness.service.cancelSelect(operation.operationId);
+  assert.equal(cancellationState.status, 'CANCELLING');
+  harness.selectResult.reject(cancelledQueryError());
+
+  await assert.rejects(
+    execution,
+    (error: unknown) => error instanceof QueryExecutionError
+      && error.details.kind === 'CANCELLED'
+      && error.details.sqlState === '57014',
+  );
+  assert.equal(harness.runner.cancelCalls, 1);
+  assert.equal(harness.client.requests.at(-1), 'ROLLBACK;');
+  assert.equal(harness.activity.attempts.at(-1)?.status, 'CANCELLED');
+  assert.equal(harness.activity.attempts.at(-1)?.errorMessage, 'Query cancelled');
+  assert.deepEqual(harness.service.getState(), { status: 'IDLE', message: 'Query cancelled' });
+});
+
+test('20: the permanent connection remains usable after cancellation', async () => {
+  const harness = createCancellationHarness();
+  let selectCall = 0;
+  harness.client.queryImplementation = async (request) => {
+    if (typeof request === 'string') return { rows: [] };
+    selectCall += 1;
+    return selectCall === 1 ? harness.selectResult.promise : selectResult([[9]]);
+  };
+
+  const firstExecution = harness.service.executeSelect('SELECT pg_sleep(10)');
+  await harness.runner.started.promise;
+  const operation = harness.service.getState();
+  assert.equal(operation.status, 'EXECUTING');
+  if (operation.status !== 'EXECUTING') return;
+  await harness.service.cancelSelect(operation.operationId);
+  harness.selectResult.reject(cancelledQueryError());
+  await assert.rejects(firstExecution, QueryExecutionError);
+
+  const secondResult = await harness.service.executeSelect('SELECT 9');
+  assert.deepEqual(secondResult.rows, [[9]]);
+  assert.equal(harness.provider.connected, true);
+});
+
+test('21: a double Cancel sends only one PostgreSQL cancellation request', async () => {
+  const cancelRequest = createDeferred<void>();
+  const harness = createCancellationHarness(() => cancelRequest.promise);
+  const execution = harness.service.executeSelect('SELECT pg_sleep(10)');
+  await harness.runner.started.promise;
+  const operation = harness.service.getState();
+  assert.equal(operation.status, 'EXECUTING');
+  if (operation.status !== 'EXECUTING') return;
+
+  const firstCancel = harness.service.cancelSelect(operation.operationId);
+  await assert.rejects(
+    () => harness.service.cancelSelect(operation.operationId),
+    (error: unknown) => error instanceof QueryOperationError
+      && error.safeMessage === 'Query cancellation is already in progress.',
+  );
+  assert.equal(harness.runner.cancelCalls, 1);
+  cancelRequest.resolve();
+  await firstCancel;
+  harness.selectResult.reject(cancelledQueryError());
+  await assert.rejects(execution, QueryExecutionError);
+});
+
+test('22: Cancel after SELECT completion is safely rejected', async () => {
+  const { service } = createHarness();
+  await service.executeSelect('SELECT id FROM orders');
+
+  await assert.rejects(
+    () => service.cancelSelect('00000000-0000-4000-8000-000000000000'),
+    (error: unknown) => error instanceof QueryOperationError
+      && error.safeMessage === 'No matching SELECT query is executing.',
+  );
+});
+
+test('23: timeout and manual cancellation remain distinct outcomes', async () => {
+  const timeoutHarness = createHarness();
+  timeoutHarness.client.queryImplementation = async (request) => {
+    if (typeof request !== 'string') throw cancelledQueryError();
+    return { rows: [] };
+  };
+  await assert.rejects(
+    () => timeoutHarness.service.executeSelect('SELECT pg_sleep(30)'),
+    (error: unknown) => error instanceof QueryExecutionError
+      && error.details.kind === 'TIMEOUT',
+  );
+
+  const cancelledHarness = createCancellationHarness();
+  const execution = cancelledHarness.service.executeSelect('SELECT pg_sleep(10)');
+  await cancelledHarness.runner.started.promise;
+  const operation = cancelledHarness.service.getState();
+  assert.equal(operation.status, 'EXECUTING');
+  if (operation.status !== 'EXECUTING') return;
+  await cancelledHarness.service.cancelSelect(operation.operationId);
+  cancelledHarness.selectResult.reject(cancelledQueryError());
+  await assert.rejects(
+    execution,
+    (error: unknown) => error instanceof QueryExecutionError
+      && error.details.kind === 'CANCELLED',
+  );
+
+  assert.equal(timeoutHarness.activity.attempts.at(-1)?.status, 'TIMEOUT');
+  assert.equal(cancelledHarness.activity.attempts.at(-1)?.status, 'CANCELLED');
+});
+
 function createHarness() {
   const client = new FakeExecutionClient();
   const provider = new FakeActiveClientProvider(client);
@@ -273,6 +386,53 @@ function createHarness() {
   const activity = new FakeActivityRecorder();
   const service = new PostgresQueryExecutionService(provider, safety, activity);
   return { activity, client, provider, safety, service };
+}
+
+class FakeCancelableRunner implements SelectQueryRunner {
+  readonly started = createDeferred<void>();
+  cancelCalls = 0;
+
+  constructor(private readonly cancelImplementation: () => Promise<void>) {}
+
+  start(client: PostgresClient, config: PostgresQueryConfig) {
+    const result = client.query(config);
+    this.started.resolve();
+    return {
+      result,
+      requestCancel: async () => {
+        this.cancelCalls += 1;
+        await this.cancelImplementation();
+      },
+    };
+  }
+}
+
+function createCancellationHarness(cancelImplementation: () => Promise<void> = async () => undefined) {
+  const client = new FakeExecutionClient();
+  const provider = new FakeActiveClientProvider(client);
+  const safety = new FakeSafetyValidator();
+  const activity = new FakeActivityRecorder();
+  const selectResultDeferred = createDeferred<PostgresQueryResult>();
+  client.queryImplementation = async (request) => (
+    typeof request === 'string' ? { rows: [] } : selectResultDeferred.promise
+  );
+  const runner = new FakeCancelableRunner(cancelImplementation);
+  const service = new PostgresQueryExecutionService(
+    provider,
+    safety,
+    activity,
+    undefined,
+    runner,
+  );
+  return {
+    activity,
+    client,
+    provider,
+    runner,
+    safety,
+    selectResult: selectResultDeferred,
+    service,
+  };
 }
 
 function selectResult(rows: unknown[][]): PostgresQueryResult {
@@ -290,6 +450,14 @@ function asConfig(request: string | PostgresQueryConfig | undefined): PostgresQu
 
 function createDeferred<T>() {
   let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
-  return { promise, resolve: resolvePromise };
+  let rejectPromise: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, reject: rejectPromise, resolve: resolvePromise };
+}
+
+function cancelledQueryError(): Error & { code: string } {
+  return Object.assign(new Error('raw PostgreSQL cancellation detail'), { code: '57014' });
 }

@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PostgresQueryExecutionService = exports.QueryExecutionError = void 0;
+exports.PostgresQueryExecutionService = exports.QueryOperationError = exports.QueryExecutionError = void 0;
 exports.normalizeValue = normalizeValue;
 exports.getSafeQueryError = getSafeQueryError;
+const node_crypto_1 = require("node:crypto");
 const postgresOperationGate_1 = require("./postgresOperationGate");
 const postgresConnectionManager_1 = require("./postgresConnectionManager");
 const sqlSafetyService_1 = require("./sqlSafetyService");
@@ -10,6 +11,7 @@ const BEGIN_READ_ONLY_SQL = 'BEGIN READ ONLY;';
 const SET_LOCAL_TIMEOUT_SQL = "SET LOCAL statement_timeout = '15000ms';";
 const ROLLBACK_SQL = 'ROLLBACK;';
 const MAX_RESULT_ROWS = 1_000;
+const DISCONNECT_QUERY_CLEANUP_TIMEOUT_MS = 22_000;
 class QueryExecutionError extends Error {
     details;
     constructor(details) {
@@ -19,43 +21,77 @@ class QueryExecutionError extends Error {
     }
 }
 exports.QueryExecutionError = QueryExecutionError;
+class QueryOperationError extends Error {
+    safeMessage;
+    constructor(safeMessage) {
+        super(safeMessage);
+        this.safeMessage = safeMessage;
+        this.name = 'QueryOperationError';
+    }
+}
+exports.QueryOperationError = QueryOperationError;
+class QueryCancelledBeforeDispatchError extends Error {
+}
+const standardSelectQueryRunner = {
+    start: (client, config) => ({
+        result: client.query(config),
+        requestCancel: () => Promise.reject(new Error('PostgreSQL cancellation is unavailable.')),
+    }),
+};
 class PostgresQueryExecutionService {
     connectionManager;
     safetyService;
     activityRecorder;
-    executionInProgress = false;
-    constructor(connectionManager, safetyService, activityRecorder) {
+    operationGate;
+    queryRunner;
+    state = { status: 'IDLE' };
+    activeExecution;
+    listeners = new Set();
+    constructor(connectionManager, safetyService, activityRecorder, operationGate = new postgresOperationGate_1.PostgresOperationGate(), queryRunner = standardSelectQueryRunner) {
         this.connectionManager = connectionManager;
         this.safetyService = safetyService;
         this.activityRecorder = activityRecorder;
+        this.operationGate = operationGate;
+        this.queryRunner = queryRunner;
+    }
+    getState() {
+        return cloneOperationState(this.state);
+    }
+    subscribe(listener) {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
     }
     async executeSelect(sql) {
-        if (this.executionInProgress) {
-            const details = {
-                kind: 'EXECUTION',
-                message: 'A query is already executing.',
-            };
-            const storageWarnings = await this.recordAttempt({
-                sqlText: sql,
-                connection: this.connectionManager.getConnectionState().connection,
-                status: 'BLOCKED',
-                durationMs: 0,
-                returnedRows: null,
-                truncated: false,
-                errorCode: null,
-                errorMessage: details.message,
-            });
-            throw new QueryExecutionError(withStorageWarnings(details, storageWarnings));
+        if (this.activeExecution) {
+            throw await this.recordBlockedExecution(sql, 'A query is already executing.');
         }
-        this.executionInProgress = true;
+        const operationId = (0, node_crypto_1.randomUUID)();
+        try {
+            this.operationGate.reserveForSelect(operationId);
+        }
+        catch (error) {
+            const message = error instanceof postgresOperationGate_1.PostgresOperationBlockedError
+                ? error.safeMessage
+                : 'Another PostgreSQL operation is already in progress.';
+            throw await this.recordBlockedExecution(sql, message);
+        }
+        const activeExecution = createActiveExecution(operationId);
+        this.activeExecution = activeExecution;
+        this.setState({
+            status: 'EXECUTING',
+            operationId,
+            startedAt: activeExecution.startedAt,
+        });
         const startedAt = Date.now();
         const connection = this.connectionManager.getConnectionState().connection;
+        let resolutionMessage;
         try {
             const safeQuery = await this.safetyService.validateSelect(sql);
+            throwIfCancelledBeforeDispatch(activeExecution);
             const result = await this.connectionManager.withActiveClient(async (client) => {
-                const result = await executeReadOnlyTransaction(client, safeQuery.executableSql);
+                const result = await executeReadOnlyTransaction(client, safeQuery.executableSql, activeExecution, this.queryRunner);
                 return normalizeResult(result, Date.now() - startedAt);
-            });
+            }, { selectOperationId: operationId });
             const storageWarnings = await this.recordAttempt({
                 sqlText: sql,
                 connection,
@@ -69,15 +105,18 @@ class PostgresQueryExecutionService {
             return withStorageWarnings(result, storageWarnings);
         }
         catch (error) {
-            const details = getSafeQueryError(error);
+            const details = getExecutionError(error, activeExecution);
+            resolutionMessage = operationResolutionMessage(details.kind);
             const storageWarnings = await this.recordAttempt({
                 sqlText: sql,
                 connection,
                 status: details.kind === 'NOT_ALLOWED'
                     ? 'BLOCKED'
-                    : details.kind === 'TIMEOUT'
-                        ? 'TIMEOUT'
-                        : 'ERROR',
+                    : details.kind === 'CANCELLED'
+                        ? 'CANCELLED'
+                        : details.kind === 'TIMEOUT'
+                            ? 'TIMEOUT'
+                            : 'ERROR',
                 durationMs: Math.max(0, Date.now() - startedAt),
                 returnedRows: null,
                 truncated: false,
@@ -87,8 +126,76 @@ class PostgresQueryExecutionService {
             throw new QueryExecutionError(withStorageWarnings(details, storageWarnings));
         }
         finally {
-            this.executionInProgress = false;
+            this.operationGate.releaseSelect(operationId);
+            if (this.activeExecution === activeExecution)
+                this.activeExecution = undefined;
+            activeExecution.complete();
+            this.setState({
+                status: 'IDLE',
+                ...(resolutionMessage ? { message: resolutionMessage } : {}),
+            });
         }
+    }
+    async cancelSelect(operationId) {
+        const activeExecution = this.activeExecution;
+        if (!activeExecution || activeExecution.operationId !== operationId) {
+            throw new QueryOperationError('No matching SELECT query is executing.');
+        }
+        if (activeExecution.phase === 'CLEANUP') {
+            throw new QueryOperationError('The SELECT query has already finished; cleanup is in progress.');
+        }
+        if (activeExecution.cancelRequested) {
+            throw new QueryOperationError('Query cancellation is already in progress.');
+        }
+        activeExecution.cancelRequested = true;
+        this.setState({
+            status: 'CANCELLING',
+            operationId,
+            startedAt: activeExecution.startedAt,
+        });
+        const runningQuery = activeExecution.runningQuery;
+        if (runningQuery) {
+            try {
+                await runningQuery.requestCancel();
+                activeExecution.cancelRequestSent = true;
+            }
+            catch {
+                if (this.activeExecution !== activeExecution
+                    || activeExecution.runningQuery !== runningQuery)
+                    return this.getState();
+                activeExecution.cancelRequested = false;
+                this.setState({
+                    status: 'EXECUTING',
+                    operationId,
+                    startedAt: activeExecution.startedAt,
+                });
+                throw new QueryOperationError('The cancellation request could not be sent. The query may still be running.');
+            }
+        }
+        return this.getState();
+    }
+    async cancelBeforeDisconnect() {
+        const activeExecution = this.activeExecution;
+        if (!activeExecution)
+            return;
+        if (!activeExecution.cancelRequested && activeExecution.phase !== 'CLEANUP') {
+            await this.cancelSelect(activeExecution.operationId).catch(() => undefined);
+        }
+        await waitForCompletion(activeExecution.completion, DISCONNECT_QUERY_CLEANUP_TIMEOUT_MS);
+    }
+    async recordBlockedExecution(sql, message) {
+        const details = { kind: 'EXECUTION', message };
+        const storageWarnings = await this.recordAttempt({
+            sqlText: sql,
+            connection: this.connectionManager.getConnectionState().connection,
+            status: 'BLOCKED',
+            durationMs: 0,
+            returnedRows: null,
+            truncated: false,
+            errorCode: null,
+            errorMessage: message,
+        });
+        return new QueryExecutionError(withStorageWarnings(details, storageWarnings));
     }
     async recordAttempt(attempt) {
         try {
@@ -100,22 +207,40 @@ class PostgresQueryExecutionService {
             return [warning];
         }
     }
+    setState(state) {
+        this.state = cloneOperationState(state);
+        for (const listener of this.listeners) {
+            try {
+                listener(this.getState());
+            }
+            catch {
+                // Renderer notification failures must not affect PostgreSQL cleanup.
+            }
+        }
+    }
 }
 exports.PostgresQueryExecutionService = PostgresQueryExecutionService;
-async function executeReadOnlyTransaction(client, executableSql) {
+async function executeReadOnlyTransaction(client, executableSql, activeExecution, queryRunner) {
     let transactionStarted = false;
     let result;
     let operationError;
     try {
         await client.query(BEGIN_READ_ONLY_SQL);
         transactionStarted = true;
+        throwIfCancelledBeforeDispatch(activeExecution);
         await client.query(SET_LOCAL_TIMEOUT_SQL);
-        result = await client.query({ text: executableSql, rowMode: 'array' });
+        throwIfCancelledBeforeDispatch(activeExecution);
+        activeExecution.phase = 'RUNNING';
+        const runningQuery = queryRunner.start(client, { text: executableSql, rowMode: 'array' });
+        activeExecution.runningQuery = runningQuery;
+        result = await runningQuery.result;
     }
     catch (error) {
         operationError = error;
     }
     finally {
+        activeExecution.phase = 'CLEANUP';
+        activeExecution.runningQuery = undefined;
         if (transactionStarted) {
             try {
                 await client.query(ROLLBACK_SQL);
@@ -131,6 +256,61 @@ async function executeReadOnlyTransaction(client, executableSql) {
     if (!result)
         throw new Error('Query returned no result.');
     return result;
+}
+function throwIfCancelledBeforeDispatch(activeExecution) {
+    if (activeExecution.cancelRequested)
+        throw new QueryCancelledBeforeDispatchError();
+}
+function createActiveExecution(operationId) {
+    let complete = () => undefined;
+    const completion = new Promise((resolve) => { complete = resolve; });
+    return {
+        operationId,
+        startedAt: new Date().toISOString(),
+        cancelRequested: false,
+        cancelRequestSent: false,
+        phase: 'PREPARING',
+        completion,
+        complete,
+    };
+}
+function getExecutionError(error, activeExecution) {
+    if (error instanceof QueryCancelledBeforeDispatchError
+        || (activeExecution.cancelRequestSent && getSqlState(error) === '57014')) {
+        return {
+            kind: 'CANCELLED',
+            message: 'Query cancelled',
+            ...(getSqlState(error) ? { sqlState: getSqlState(error) } : {}),
+        };
+    }
+    return getSafeQueryError(error);
+}
+function getSqlState(error) {
+    if (!isRecord(error))
+        return undefined;
+    return typeof error.code === 'string' && error.code.length === 5 ? error.code : undefined;
+}
+function operationResolutionMessage(kind) {
+    if (kind === 'CANCELLED')
+        return 'Query cancelled';
+    if (kind === 'TIMEOUT')
+        return 'Query timed out';
+    if (kind === 'CONNECTION')
+        return 'Disconnected';
+    return undefined;
+}
+function cloneOperationState(state) {
+    return { ...state };
+}
+async function waitForCompletion(completion, timeoutMs) {
+    let timer;
+    const timeout = new Promise((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+        timer.unref?.();
+    });
+    await Promise.race([completion, timeout]);
+    if (timer)
+        clearTimeout(timer);
 }
 function normalizeResult(result, durationMs) {
     const sourceRows = result.rows.slice(0, MAX_RESULT_ROWS);

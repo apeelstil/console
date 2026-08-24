@@ -57,7 +57,7 @@ const identity = {
     getWindowsUser: () => 'TEST\\support.agent',
     getComputerName: () => 'SUPPORT-PC',
 };
-(0, node_test_1.default)('migration 1 through 3 preserves connection profiles and creates local query tables', () => {
+(0, node_test_1.default)('migration 1 through 4 preserves connection profiles and creates local query tables', () => {
     const databasePath = nextDatabasePath();
     const legacy = new better_sqlite3_1.default(databasePath);
     createVersionOneSchema(legacy);
@@ -77,14 +77,14 @@ const identity = {
     strict_1.default.deepEqual(listTables(migrated), ['audit_log', 'connection_profiles', 'query_history', 'saved_queries']);
     migrated.close();
 });
-(0, node_test_1.default)('databases newer than schema v3 are rejected', () => {
+(0, node_test_1.default)('databases newer than schema v4 are rejected', () => {
     const databasePath = nextDatabasePath();
     const database = new better_sqlite3_1.default(databasePath);
-    database.pragma('user_version = 4');
+    database.pragma('user_version = 5');
     database.close();
     strict_1.default.throws(() => (0, database_1.initializeDatabase)(databasePath), /newer application version/);
 });
-(0, node_test_1.default)('migration 2 to 3 preserves existing Audit rows and enables mutation outcomes', () => {
+(0, node_test_1.default)('migration 2 through 4 preserves existing Audit rows and enables mutation outcomes', () => {
     const databasePath = nextDatabasePath();
     const database = (0, database_1.initializeDatabase)(databasePath);
     const repository = new queryActivityRepository_1.AuditLogRepository(database);
@@ -102,6 +102,24 @@ const identity = {
         outcome: 'PENDING',
     });
     strict_1.default.equal(migratedRepository.list()[0]?.outcome, 'PENDING');
+    migrated.close();
+});
+(0, node_test_1.default)('migration 3 to 4 preserves activity and enables CANCELLED in History and Audit', async () => {
+    const databasePath = nextDatabasePath();
+    const database = (0, database_1.initializeDatabase)(databasePath);
+    await new queryActivityService_1.LocalQueryActivityService(new queryActivityRepository_1.QueryHistoryRepository(database), new queryActivityRepository_1.AuditLogRepository(database), identity).recordAttempt(attempt('SUCCESS'));
+    database.pragma('user_version = 3');
+    database.close();
+    const migrated = (0, database_1.initializeDatabase)(databasePath);
+    const history = new queryActivityRepository_1.QueryHistoryRepository(migrated);
+    const audit = new queryActivityRepository_1.AuditLogRepository(migrated);
+    await new queryActivityService_1.LocalQueryActivityService(history, audit, identity).recordAttempt({
+        ...attempt('CANCELLED'),
+        errorCode: '57014',
+        errorMessage: 'Query cancelled',
+    });
+    strict_1.default.deepEqual(history.list().map((entry) => entry.status).sort(), ['CANCELLED', 'SUCCESS']);
+    strict_1.default.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['CANCELLED', 'SUCCESS']);
     migrated.close();
 });
 (0, node_test_1.default)('Saved Query CRUD persists name, description, and SQL', () => {
@@ -147,20 +165,20 @@ const identity = {
     strict_1.default.equal(executeCalls, 0);
     void executeCalls;
 });
-(0, node_test_1.default)('SUCCESS, ERROR, TIMEOUT, and BLOCKED are written to both History and Audit', async () => {
+(0, node_test_1.default)('SUCCESS, ERROR, TIMEOUT, BLOCKED, and CANCELLED are written to History and Audit', async () => {
     const database = (0, database_1.initializeDatabase)(nextDatabasePath());
     const history = new queryActivityRepository_1.QueryHistoryRepository(database);
     const audit = new queryActivityRepository_1.AuditLogRepository(database);
     const service = new queryActivityService_1.LocalQueryActivityService(history, audit, identity);
-    for (const status of ['SUCCESS', 'ERROR', 'TIMEOUT', 'BLOCKED']) {
+    for (const status of ['SUCCESS', 'ERROR', 'TIMEOUT', 'BLOCKED', 'CANCELLED']) {
         await service.recordAttempt({
             ...attempt(status),
             errorCode: status === 'TIMEOUT' ? '57014' : null,
             errorMessage: status === 'SUCCESS' ? null : `Safe ${status} message`,
         });
     }
-    strict_1.default.deepEqual(history.list().map((entry) => entry.status).sort(), ['BLOCKED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
-    strict_1.default.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['BLOCKED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
+    strict_1.default.deepEqual(history.list().map((entry) => entry.status).sort(), ['BLOCKED', 'CANCELLED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
+    strict_1.default.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['BLOCKED', 'CANCELLED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
     strict_1.default.equal(audit.list().every((entry) => entry.operation === 'EXECUTE'), true);
     database.close();
 });

@@ -3,6 +3,7 @@ import { isProductionEnvironment, type ConnectionEnvironment } from '../shared/c
 import type { ConnectionState } from '../shared/postgresConnection';
 import type {
   QueryExecutionErrorDto,
+  QueryOperationState,
   SelectQueryResult,
 } from '../shared/queryExecution';
 import type {
@@ -29,7 +30,6 @@ import {
 type WorkspaceSection = 'workspace' | 'saved' | 'history' | 'audit';
 type ExecutionViewState =
   | { status: 'idle' }
-  | { status: 'executing' }
   | { status: 'success'; result: SelectQueryResult }
   | { status: 'error'; error: QueryExecutionErrorDto };
 
@@ -42,6 +42,7 @@ export function App() {
   const [sql, setSql] = useState('');
   const [queryBuilder, setQueryBuilder] = useState(createQueryBuilderState);
   const [execution, setExecution] = useState<ExecutionViewState>({ status: 'idle' });
+  const [queryOperation, setQueryOperation] = useState<QueryOperationState>({ status: 'IDLE' });
   const [pendingEditorLoad, setPendingEditorLoad] = useState<EditorLoadRequest>();
   const [mutationState, setMutationState] = useState<MutationTransactionState>({ status: 'IDLE' });
   const [mutationPreparation, setMutationPreparation] = useState<PreparedMutation>();
@@ -71,6 +72,16 @@ export function App() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const api = window.supraDesktop;
+    if (!api) return;
+    const unsubscribe = api.onQueryOperationStateChanged(setQueryOperation);
+    void api.getQueryOperationState().then((result) => {
+      if (result.ok) setQueryOperation(result.data);
+    }).catch(() => undefined);
+    return unsubscribe;
+  }, []);
+
   const disconnect = async () => {
     const api = window.supraDesktop;
     if (!api) return;
@@ -80,7 +91,8 @@ export function App() {
 
   const connected = connectionState.status === 'CONNECTED';
   const disconnecting = connectionState.status === 'DISCONNECTING';
-  const executing = execution.status === 'executing';
+  const executing = queryOperation.status !== 'IDLE';
+  const cancelling = queryOperation.status === 'CANCELLING';
   const transactionPending = mutationState.status === 'PENDING_CONFIRMATION';
   const transactionBusy = mutationState.status === 'EXECUTING'
     || mutationState.status === 'COMMITTING'
@@ -123,7 +135,7 @@ export function App() {
   const executeSelect = async () => {
     if (!canExecute || executionLock.current) return;
     executionLock.current = true;
-    setExecution({ status: 'executing' });
+    setExecution({ status: 'idle' });
     setBottomTab('results');
 
     try {
@@ -153,6 +165,27 @@ export function App() {
       setBottomTab('messages');
     } finally {
       executionLock.current = false;
+    }
+  };
+
+  const cancelSelect = async () => {
+    const api = window.supraDesktop;
+    if (!api || queryOperation.status !== 'EXECUTING') return;
+    const result = await api.cancelSelect(queryOperation.operationId).catch(() => undefined);
+    if (!result) {
+      setExecution({
+        status: 'error',
+        error: { kind: 'EXECUTION', message: 'Query cancellation did not respond.' },
+      });
+      setBottomTab('messages');
+      return;
+    }
+    if (!result.ok) {
+      setExecution({
+        status: 'error',
+        error: { kind: 'EXECUTION', message: result.error },
+      });
+      setBottomTab('messages');
     }
   };
 
@@ -236,7 +269,7 @@ export function App() {
         <nav className="top-actions">
           <button className="toolbar-button" disabled={connected || disconnecting} onClick={() => setConnectionOpen(true)}>New connection</button>
           {connected && activeConnection && <span className={`connection-summary ${activeConnection.environment === 'PROD' ? 'prod' : ''}`}><b>{activeConnection.name}</b><em>{activeConnection.environment}</em><span>{activeConnection.database}</span><span>{activeConnection.username}</span></span>}
-          {(connected || disconnecting) && <button className="disconnect-button" disabled={disconnecting || executing || transactionBusy} title={transactionPending ? 'The pending transaction will be rolled back before disconnect.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Disconnecting…' : 'Disconnect'}</button>}
+          {(connected || disconnecting) && <button className="disconnect-button" disabled={disconnecting || transactionBusy} title={transactionPending ? 'The pending transaction will be rolled back before disconnect.' : executing ? 'The running SELECT will be cancelled and rolled back before disconnect.' : undefined} onClick={() => void disconnect()}>{disconnecting ? 'Disconnecting…' : 'Disconnect'}</button>}
           <span className={`status ${connectionState.status.toLowerCase()}`}><i />{formatConnectionStatus(connectionState.status)}</span>
         </nav>
       </header>
@@ -277,7 +310,7 @@ export function App() {
               onGeneratedSql={setSql}
             />
             <section className="editor panel">
-              <div className="panel-heading"><span>SQL Editor</span><div><span className="readonly-label">SELECT: Ctrl+Enter</span><button className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button><button disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing…' : '▶ Execute SELECT'}</button></div></div>
+              <div className="panel-heading"><span>SQL Editor</span><div><span className="readonly-label">SELECT: Ctrl+Enter</span><button className="change-button" disabled={!canExecuteChange} onClick={() => void prepareMutation()} title="Validate one INSERT/UPDATE and request confirmation">Execute change</button><button disabled={!canExecute} onClick={() => void executeSelect()} title={connected ? 'Execute one validated SELECT (Ctrl+Enter)' : 'Connect to a database first.'}>{executing ? 'Executing...' : '▶ Execute SELECT'}</button>{executing && <button className="cancel-query-button" disabled={cancelling} onClick={() => void cancelSelect()}>{cancelling ? 'Cancelling...' : 'Cancel query'}</button>}</div></div>
               <div className="editor-body"><div className="line-numbers">{Array.from({ length: editorLineCount }, (_, index) => <div key={index}>{index + 1}</div>)}</div><textarea spellCheck={false} value={sql} placeholder="Write one SELECT or generate it with Query Builder" onChange={(event) => setSql(event.target.value)} onKeyDown={handleEditorKeyDown} aria-label="SQL editor" /></div>
               <div className="editor-status"><span>Ln 1, Col 1</span><span>SELECT read-only · changes require confirmation + COMMIT/ROLLBACK</span></div>
             </section>
@@ -294,7 +327,7 @@ export function App() {
               ) : bottomTab === 'results' ? (
                 execution.status === 'success'
                   ? <ResultsGrid result={execution.result} />
-                  : <div className="output-empty"><span>▦</span><strong>{executing ? 'Executing SELECT…' : 'Execute a query to see results'}</strong><small>{executing ? 'The query is running in a read-only transaction' : 'Query output will appear in this panel'}</small></div>
+                  : <div className="output-empty"><span>▦</span><strong>{cancelling ? 'Cancelling...' : executing ? 'Executing...' : 'Execute a query to see results'}</strong><small>{executing ? 'The query is running in a read-only transaction' : 'Query output will appear in this panel'}</small></div>
               ) : execution.status === 'error' ? (
                 <div className="execution-message" role="alert">
                   <span className="message-kind">{formatExecutionErrorKind(execution.error.kind)}</span>
@@ -343,6 +376,7 @@ function formatExecutionErrorKind(kind: QueryExecutionErrorDto['kind']): string 
     case 'SYNTAX': return 'Syntax error';
     case 'NOT_ALLOWED': return 'Statement not allowed';
     case 'TIMEOUT': return 'Query timeout';
+    case 'CANCELLED': return 'Query cancelled';
     case 'PERMISSION_DENIED': return 'Permission denied';
     case 'CONNECTION': return 'Connection error';
     default: return 'Query execution error';

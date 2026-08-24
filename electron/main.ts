@@ -11,6 +11,7 @@ import { registerMutationTransactionHandlers } from './ipc/mutationTransactionHa
 import { PostgresConnectionManager } from './postgres/postgresConnectionManager';
 import { PostgresMetadataService } from './postgres/postgresMetadataService';
 import { PostgresQueryExecutionService } from './postgres/postgresQueryExecutionService';
+import { PgCancelableQueryRunner } from './postgres/pgCancelableQueryRunner';
 import { SqlSafetyService } from './postgres/sqlSafetyService';
 import { MutationSafetyService } from './postgres/mutationSafetyService';
 import { MutationTransactionManager } from './postgres/mutationTransactionManager';
@@ -25,6 +26,7 @@ import { AuditLogRepository, QueryHistoryRepository } from './storage/queryActiv
 import { LocalQueryActivityService, NodeAuditIdentityProvider } from './storage/queryActivityService';
 import { POSTGRES_CONNECTION_CHANNELS } from '../shared/postgresConnection';
 import { MUTATION_TRANSACTION_CHANNELS } from '../shared/mutationTransaction';
+import { QUERY_EXECUTION_CHANNELS } from '../shared/queryExecution';
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 let localDatabase: Database.Database | undefined;
@@ -37,6 +39,17 @@ let queryActivityService: LocalQueryActivityService | undefined;
 let mutationTransactionManager: MutationTransactionManager | undefined;
 const postgresOperationGate = new PostgresOperationGate();
 let shutdownStarted = false;
+
+function broadcast(channel: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+    try {
+      window.webContents.send(channel, payload);
+    } catch {
+      // A closing renderer must not interrupt main-process cleanup.
+    }
+  }
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -104,9 +117,7 @@ void app.whenReady().then(async () => {
       if (state.status === 'ERROR' || state.status === 'DISCONNECTED') {
         void mutationTransactionManager?.handleConnectionLoss();
       }
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(POSTGRES_CONNECTION_CHANNELS.stateChanged, state);
-      }
+      broadcast(POSTGRES_CONNECTION_CHANNELS.stateChanged, state);
     });
   } catch {
     profileService = undefined;
@@ -121,7 +132,12 @@ void app.whenReady().then(async () => {
         connectionManager,
         safetyService,
         queryActivityService,
+        postgresOperationGate,
+        new PgCancelableQueryRunner(),
       );
+      queryExecutionService.subscribe((state) => {
+        broadcast(QUERY_EXECUTION_CHANNELS.stateChanged, state);
+      });
     } catch {
       queryExecutionService = undefined;
     }
@@ -137,17 +153,18 @@ void app.whenReady().then(async () => {
         postgresOperationGate,
         queryActivityService,
       );
-      connectionManager.setBeforeDisconnectHandler(() =>
-        mutationTransactionManager?.rollbackBeforeDisconnect() ?? Promise.resolve());
       mutationTransactionManager.subscribe((state) => {
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send(MUTATION_TRANSACTION_CHANNELS.stateChanged, state);
-        }
+        broadcast(MUTATION_TRANSACTION_CHANNELS.stateChanged, state);
       });
     } catch {
       mutationTransactionManager = undefined;
     }
   }
+
+  connectionManager?.setBeforeDisconnectHandler(async () => {
+    await queryExecutionService?.cancelBeforeDisconnect();
+    await mutationTransactionManager?.rollbackBeforeDisconnect();
+  });
 
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

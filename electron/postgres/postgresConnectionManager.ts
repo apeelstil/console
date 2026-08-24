@@ -44,6 +44,7 @@ export interface PostgresQueryResult {
 
 export interface ActiveClientAccess {
   mutationTransactionId?: string;
+  selectOperationId?: string;
 }
 
 export type PostgresClientFactory = (config: ClientConfig) => PostgresClient;
@@ -107,6 +108,8 @@ export class PostgresConnectionManager {
     try {
       if (access.mutationTransactionId) {
         this.operationGate.assertMutationOwner(access.mutationTransactionId);
+      } else if (access.selectOperationId) {
+        this.operationGate.assertSelectOwner(access.selectOperationId);
       } else {
         this.operationGate.assertStandardOperationAllowed();
       }

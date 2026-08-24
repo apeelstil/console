@@ -32,7 +32,7 @@ const identity: AuditIdentityProvider = {
   getComputerName: () => 'SUPPORT-PC',
 };
 
-test('migration 1 through 3 preserves connection profiles and creates local query tables', () => {
+test('migration 1 through 4 preserves connection profiles and creates local query tables', () => {
   const databasePath = nextDatabasePath();
   const legacy = new Database(databasePath);
   createVersionOneSchema(legacy);
@@ -59,15 +59,15 @@ test('migration 1 through 3 preserves connection profiles and creates local quer
   migrated.close();
 });
 
-test('databases newer than schema v3 are rejected', () => {
+test('databases newer than schema v4 are rejected', () => {
   const databasePath = nextDatabasePath();
   const database = new Database(databasePath);
-  database.pragma('user_version = 4');
+  database.pragma('user_version = 5');
   database.close();
   assert.throws(() => initializeDatabase(databasePath), /newer application version/);
 });
 
-test('migration 2 to 3 preserves existing Audit rows and enables mutation outcomes', () => {
+test('migration 2 through 4 preserves existing Audit rows and enables mutation outcomes', () => {
   const databasePath = nextDatabasePath();
   const database = initializeDatabase(databasePath);
   const repository = new AuditLogRepository(database);
@@ -86,6 +86,31 @@ test('migration 2 to 3 preserves existing Audit rows and enables mutation outcom
     outcome: 'PENDING',
   });
   assert.equal(migratedRepository.list()[0]?.outcome, 'PENDING');
+  migrated.close();
+});
+
+test('migration 3 to 4 preserves activity and enables CANCELLED in History and Audit', async () => {
+  const databasePath = nextDatabasePath();
+  const database = initializeDatabase(databasePath);
+  await new LocalQueryActivityService(
+    new QueryHistoryRepository(database),
+    new AuditLogRepository(database),
+    identity,
+  ).recordAttempt(attempt('SUCCESS'));
+  database.pragma('user_version = 3');
+  database.close();
+
+  const migrated = initializeDatabase(databasePath);
+  const history = new QueryHistoryRepository(migrated);
+  const audit = new AuditLogRepository(migrated);
+  await new LocalQueryActivityService(history, audit, identity).recordAttempt({
+    ...attempt('CANCELLED'),
+    errorCode: '57014',
+    errorMessage: 'Query cancelled',
+  });
+
+  assert.deepEqual(history.list().map((entry) => entry.status).sort(), ['CANCELLED', 'SUCCESS']);
+  assert.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['CANCELLED', 'SUCCESS']);
   migrated.close();
 });
 
@@ -145,13 +170,13 @@ test('Saved/History Load replaces editor text but never invokes Execute', () => 
   void executeCalls;
 });
 
-test('SUCCESS, ERROR, TIMEOUT, and BLOCKED are written to both History and Audit', async () => {
+test('SUCCESS, ERROR, TIMEOUT, BLOCKED, and CANCELLED are written to History and Audit', async () => {
   const database = initializeDatabase(nextDatabasePath());
   const history = new QueryHistoryRepository(database);
   const audit = new AuditLogRepository(database);
   const service = new LocalQueryActivityService(history, audit, identity);
 
-  for (const status of ['SUCCESS', 'ERROR', 'TIMEOUT', 'BLOCKED'] as const) {
+  for (const status of ['SUCCESS', 'ERROR', 'TIMEOUT', 'BLOCKED', 'CANCELLED'] as const) {
     await service.recordAttempt({
       ...attempt(status),
       errorCode: status === 'TIMEOUT' ? '57014' : null,
@@ -159,8 +184,8 @@ test('SUCCESS, ERROR, TIMEOUT, and BLOCKED are written to both History and Audit
     });
   }
 
-  assert.deepEqual(history.list().map((entry) => entry.status).sort(), ['BLOCKED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
-  assert.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['BLOCKED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
+  assert.deepEqual(history.list().map((entry) => entry.status).sort(), ['BLOCKED', 'CANCELLED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
+  assert.deepEqual(audit.list().map((entry) => entry.outcome).sort(), ['BLOCKED', 'CANCELLED', 'ERROR', 'SUCCESS', 'TIMEOUT']);
   assert.equal(audit.list().every((entry) => entry.operation === 'EXECUTE'), true);
   database.close();
 });

@@ -25,7 +25,11 @@ import {
   type PostgresQueryResult,
 } from '../electron/postgres/postgresConnectionManager';
 import { PostgresOperationGate } from '../electron/postgres/postgresOperationGate';
-import { PostgresQueryExecutionService } from '../electron/postgres/postgresQueryExecutionService';
+import {
+  PostgresQueryExecutionService,
+  QueryExecutionError,
+  type SelectQueryRunner,
+} from '../electron/postgres/postgresQueryExecutionService';
 import { PostgresMetadataService } from '../electron/postgres/postgresMetadataService';
 import { MutationSafetyError } from '../electron/postgres/mutationSafetyService';
 
@@ -56,6 +60,7 @@ class FakeMutationClient implements PostgresClient {
   failMutation?: Error & { code?: string };
   failCommit?: Error & { code?: string };
   failRollback?: Error & { code?: string };
+  queryImplementation?: (request: string | PostgresQueryConfig) => Promise<PostgresQueryResult>;
 
   async connect(): Promise<void> { this.lifecycle.push('CONNECT'); }
   async query(request: string | PostgresQueryConfig): Promise<PostgresQueryResult> {
@@ -65,6 +70,7 @@ class FakeMutationClient implements PostgresClient {
     if (text === normalizedUpdate && this.failMutation) throw this.failMutation;
     if (text === 'COMMIT;' && this.failCommit) throw this.failCommit;
     if (text === 'ROLLBACK;' && this.failRollback) throw this.failRollback;
+    if (this.queryImplementation) return this.queryImplementation(request);
     return { rows: [], rowCount: text === normalizedUpdate ? this.affectedRows : null };
   }
   async end(): Promise<void> { this.lifecycle.push('END'); }
@@ -82,6 +88,7 @@ class GateAwareProvider implements MutationActiveClientProvider {
     access: ActiveClientAccess = {},
   ): Promise<T> {
     if (access.mutationTransactionId) this.gate.assertMutationOwner(access.mutationTransactionId);
+    else if (access.selectOperationId) this.gate.assertSelectOwner(access.selectOperationId);
     else this.gate.assertStandardOperationAllowed();
     return operation(this.client);
   }
@@ -231,6 +238,7 @@ test('16: SELECT and metadata are blocked by the main-process gate while pending
     harness.provider,
     { validateSelect: async () => ({ normalizedSql: 'SELECT 1', executableSql: 'SELECT 1' }) },
     harness.activity,
+    harness.gate,
   );
   const metadataService = new PostgresMetadataService(harness.provider);
 
@@ -349,6 +357,90 @@ test('pending gate blocks Test Connection and Connect before creating a client',
   assert.equal(factoryCalls, 0);
 });
 
+test('an active SELECT blocks mutation execution and other PostgreSQL interleaving', async () => {
+  const harness = createHarness();
+  const prepared = await harness.manager.prepareMutation(normalizedUpdate);
+  const selectResult = createDeferred<PostgresQueryResult>();
+  const selectStarted = createDeferred<void>();
+  harness.client.queryImplementation = async (request) => {
+    if (typeof request === 'string') return { rows: [] };
+    selectStarted.resolve();
+    return selectResult.promise;
+  };
+  const runner: SelectQueryRunner = {
+    start: (client, config) => ({
+      result: client.query(config),
+      requestCancel: () => Promise.reject(new Error('not used')),
+    }),
+  };
+  const selectService = new PostgresQueryExecutionService(
+    harness.provider,
+    { validateSelect: async () => ({ normalizedSql: 'SELECT 1', executableSql: 'SELECT 1' }) },
+    harness.activity,
+    harness.gate,
+    runner,
+  );
+  const metadataService = new PostgresMetadataService(harness.provider);
+
+  const execution = selectService.executeSelect('SELECT 1');
+  await selectStarted.promise;
+  await assert.rejects(() => harness.manager.prepareMutation(normalizedUpdate), MutationTransactionError);
+  await assert.rejects(() => harness.manager.executeMutation(prepared.preparationId), MutationTransactionError);
+  await assert.rejects(() => metadataService.listSchemas());
+  assert.equal(harness.client.requests.includes(normalizedUpdate), false);
+
+  selectResult.resolve({ rows: [[1]], fields: [{ name: 'value', dataTypeID: 23 }] });
+  await execution;
+  assert.equal(harness.gate.hasActiveSelect(), false);
+});
+
+test('disconnect during SELECT cancels, rolls back, then closes the permanent client', async () => {
+  const harness = await createConnectionManagerHarness();
+  const selectResult = createDeferred<PostgresQueryResult>();
+  const selectStarted = createDeferred<void>();
+  const cancelSent = createDeferred<void>();
+  harness.client.queryImplementation = async (request) => {
+    if (typeof request === 'string') return { rows: [] };
+    selectStarted.resolve();
+    return selectResult.promise;
+  };
+  const runner: SelectQueryRunner = {
+    start: (client, config) => ({
+      result: client.query(config),
+      requestCancel: async () => { cancelSent.resolve(); },
+    }),
+  };
+  const selectService = new PostgresQueryExecutionService(
+    harness.connectionManager,
+    { validateSelect: async () => ({ normalizedSql: 'SELECT pg_sleep(10)', executableSql: 'SELECT pg_sleep(10)' }) },
+    harness.activity,
+    harness.gate,
+    runner,
+  );
+  harness.connectionManager.setBeforeDisconnectHandler(async () => {
+    await selectService.cancelBeforeDisconnect();
+    await harness.manager.rollbackBeforeDisconnect();
+  });
+
+  const execution = selectService.executeSelect('SELECT pg_sleep(10)');
+  await selectStarted.promise;
+  const disconnect = harness.connectionManager.disconnect();
+  await cancelSent.promise;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  selectResult.reject(Object.assign(new Error('raw cancel detail'), { code: '57014' }));
+  await assert.rejects(
+    execution,
+    (error: unknown) => error instanceof QueryExecutionError
+      && error.details.kind === 'CANCELLED',
+  );
+  await disconnect;
+
+  assert.ok(harness.client.lifecycle.indexOf('ROLLBACK;') < harness.client.lifecycle.indexOf('END'));
+  assert.equal(harness.connectionManager.getConnectionState().status, 'DISCONNECTED');
+  assert.equal(harness.gate.hasActiveSelect(), false);
+  assert.equal(harness.activity.attempts.at(-1)?.status, 'CANCELLED');
+});
+
 function createHarness() {
   const gate = new PostgresOperationGate();
   const client = new FakeMutationClient();
@@ -402,4 +494,14 @@ function temporaryRequest(): ConnectionRequest {
     },
     temporaryPassword: 'test-only-password',
   };
+}
+
+function createDeferred<T>() {
+  let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined;
+  let rejectPromise: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, reject: rejectPromise, resolve: resolvePromise };
 }

@@ -53,6 +53,9 @@ class PostgresConnectionManager {
             if (access.mutationTransactionId) {
                 this.operationGate.assertMutationOwner(access.mutationTransactionId);
             }
+            else if (access.selectOperationId) {
+                this.operationGate.assertSelectOwner(access.selectOperationId);
+            }
             else {
                 this.operationGate.assertStandardOperationAllowed();
             }

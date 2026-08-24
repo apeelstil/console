@@ -212,6 +212,95 @@ class FakeActivityRecorder {
     strict_1.default.equal(serialized.includes('socket'), false);
     strict_1.default.equal('queryImplementation' in result, false);
 });
+(0, node_test_1.default)('19: successful cancellation sends one request, rolls back, and records CANCELLED', async () => {
+    const harness = createCancellationHarness();
+    const execution = harness.service.executeSelect('SELECT pg_sleep(10)');
+    await harness.runner.started.promise;
+    const operation = harness.service.getState();
+    strict_1.default.equal(operation.status, 'EXECUTING');
+    if (operation.status !== 'EXECUTING')
+        return;
+    const cancellationState = await harness.service.cancelSelect(operation.operationId);
+    strict_1.default.equal(cancellationState.status, 'CANCELLING');
+    harness.selectResult.reject(cancelledQueryError());
+    await strict_1.default.rejects(execution, (error) => error instanceof postgresQueryExecutionService_1.QueryExecutionError
+        && error.details.kind === 'CANCELLED'
+        && error.details.sqlState === '57014');
+    strict_1.default.equal(harness.runner.cancelCalls, 1);
+    strict_1.default.equal(harness.client.requests.at(-1), 'ROLLBACK;');
+    strict_1.default.equal(harness.activity.attempts.at(-1)?.status, 'CANCELLED');
+    strict_1.default.equal(harness.activity.attempts.at(-1)?.errorMessage, 'Query cancelled');
+    strict_1.default.deepEqual(harness.service.getState(), { status: 'IDLE', message: 'Query cancelled' });
+});
+(0, node_test_1.default)('20: the permanent connection remains usable after cancellation', async () => {
+    const harness = createCancellationHarness();
+    let selectCall = 0;
+    harness.client.queryImplementation = async (request) => {
+        if (typeof request === 'string')
+            return { rows: [] };
+        selectCall += 1;
+        return selectCall === 1 ? harness.selectResult.promise : selectResult([[9]]);
+    };
+    const firstExecution = harness.service.executeSelect('SELECT pg_sleep(10)');
+    await harness.runner.started.promise;
+    const operation = harness.service.getState();
+    strict_1.default.equal(operation.status, 'EXECUTING');
+    if (operation.status !== 'EXECUTING')
+        return;
+    await harness.service.cancelSelect(operation.operationId);
+    harness.selectResult.reject(cancelledQueryError());
+    await strict_1.default.rejects(firstExecution, postgresQueryExecutionService_1.QueryExecutionError);
+    const secondResult = await harness.service.executeSelect('SELECT 9');
+    strict_1.default.deepEqual(secondResult.rows, [[9]]);
+    strict_1.default.equal(harness.provider.connected, true);
+});
+(0, node_test_1.default)('21: a double Cancel sends only one PostgreSQL cancellation request', async () => {
+    const cancelRequest = createDeferred();
+    const harness = createCancellationHarness(() => cancelRequest.promise);
+    const execution = harness.service.executeSelect('SELECT pg_sleep(10)');
+    await harness.runner.started.promise;
+    const operation = harness.service.getState();
+    strict_1.default.equal(operation.status, 'EXECUTING');
+    if (operation.status !== 'EXECUTING')
+        return;
+    const firstCancel = harness.service.cancelSelect(operation.operationId);
+    await strict_1.default.rejects(() => harness.service.cancelSelect(operation.operationId), (error) => error instanceof postgresQueryExecutionService_1.QueryOperationError
+        && error.safeMessage === 'Query cancellation is already in progress.');
+    strict_1.default.equal(harness.runner.cancelCalls, 1);
+    cancelRequest.resolve();
+    await firstCancel;
+    harness.selectResult.reject(cancelledQueryError());
+    await strict_1.default.rejects(execution, postgresQueryExecutionService_1.QueryExecutionError);
+});
+(0, node_test_1.default)('22: Cancel after SELECT completion is safely rejected', async () => {
+    const { service } = createHarness();
+    await service.executeSelect('SELECT id FROM orders');
+    await strict_1.default.rejects(() => service.cancelSelect('00000000-0000-4000-8000-000000000000'), (error) => error instanceof postgresQueryExecutionService_1.QueryOperationError
+        && error.safeMessage === 'No matching SELECT query is executing.');
+});
+(0, node_test_1.default)('23: timeout and manual cancellation remain distinct outcomes', async () => {
+    const timeoutHarness = createHarness();
+    timeoutHarness.client.queryImplementation = async (request) => {
+        if (typeof request !== 'string')
+            throw cancelledQueryError();
+        return { rows: [] };
+    };
+    await strict_1.default.rejects(() => timeoutHarness.service.executeSelect('SELECT pg_sleep(30)'), (error) => error instanceof postgresQueryExecutionService_1.QueryExecutionError
+        && error.details.kind === 'TIMEOUT');
+    const cancelledHarness = createCancellationHarness();
+    const execution = cancelledHarness.service.executeSelect('SELECT pg_sleep(10)');
+    await cancelledHarness.runner.started.promise;
+    const operation = cancelledHarness.service.getState();
+    strict_1.default.equal(operation.status, 'EXECUTING');
+    if (operation.status !== 'EXECUTING')
+        return;
+    await cancelledHarness.service.cancelSelect(operation.operationId);
+    cancelledHarness.selectResult.reject(cancelledQueryError());
+    await strict_1.default.rejects(execution, (error) => error instanceof postgresQueryExecutionService_1.QueryExecutionError
+        && error.details.kind === 'CANCELLED');
+    strict_1.default.equal(timeoutHarness.activity.attempts.at(-1)?.status, 'TIMEOUT');
+    strict_1.default.equal(cancelledHarness.activity.attempts.at(-1)?.status, 'CANCELLED');
+});
 function createHarness() {
     const client = new FakeExecutionClient();
     const provider = new FakeActiveClientProvider(client);
@@ -219,6 +308,44 @@ function createHarness() {
     const activity = new FakeActivityRecorder();
     const service = new postgresQueryExecutionService_1.PostgresQueryExecutionService(provider, safety, activity);
     return { activity, client, provider, safety, service };
+}
+class FakeCancelableRunner {
+    cancelImplementation;
+    started = createDeferred();
+    cancelCalls = 0;
+    constructor(cancelImplementation) {
+        this.cancelImplementation = cancelImplementation;
+    }
+    start(client, config) {
+        const result = client.query(config);
+        this.started.resolve();
+        return {
+            result,
+            requestCancel: async () => {
+                this.cancelCalls += 1;
+                await this.cancelImplementation();
+            },
+        };
+    }
+}
+function createCancellationHarness(cancelImplementation = async () => undefined) {
+    const client = new FakeExecutionClient();
+    const provider = new FakeActiveClientProvider(client);
+    const safety = new FakeSafetyValidator();
+    const activity = new FakeActivityRecorder();
+    const selectResultDeferred = createDeferred();
+    client.queryImplementation = async (request) => (typeof request === 'string' ? { rows: [] } : selectResultDeferred.promise);
+    const runner = new FakeCancelableRunner(cancelImplementation);
+    const service = new postgresQueryExecutionService_1.PostgresQueryExecutionService(provider, safety, activity, undefined, runner);
+    return {
+        activity,
+        client,
+        provider,
+        runner,
+        safety,
+        selectResult: selectResultDeferred,
+        service,
+    };
 }
 function selectResult(rows) {
     return { rows, fields: [field('id', 23)] };
@@ -232,6 +359,13 @@ function asConfig(request) {
 }
 function createDeferred() {
     let resolvePromise = () => undefined;
-    const promise = new Promise((resolve) => { resolvePromise = resolve; });
-    return { promise, resolve: resolvePromise };
+    let rejectPromise = () => undefined;
+    const promise = new Promise((resolve, reject) => {
+        resolvePromise = resolve;
+        rejectPromise = reject;
+    });
+    return { promise, reject: rejectPromise, resolve: resolvePromise };
+}
+function cancelledQueryError() {
+    return Object.assign(new Error('raw PostgreSQL cancellation detail'), { code: '57014' });
 }

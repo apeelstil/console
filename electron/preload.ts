@@ -22,6 +22,7 @@ import {
 import {
   QUERY_EXECUTION_CHANNELS,
   type QueryExecutionResponse,
+  type QueryOperationState,
 } from '../shared/queryExecution';
 import {
   LOCAL_QUERY_DATA_CHANNELS,
@@ -69,6 +70,15 @@ const api: SupraDesktopApi = {
     ipcRenderer.invoke(POSTGRES_METADATA_CHANNELS.listColumns, schema, objectName) as Promise<IpcResult<DatabaseColumn[]>>,
   executeSelect: (sql: string) =>
     ipcRenderer.invoke(QUERY_EXECUTION_CHANNELS.executeSelect, sql) as Promise<QueryExecutionResponse>,
+  cancelSelect: (operationId: string) =>
+    ipcRenderer.invoke(QUERY_EXECUTION_CHANNELS.cancelSelect, operationId) as Promise<IpcResult<QueryOperationState>>,
+  getQueryOperationState: () =>
+    ipcRenderer.invoke(QUERY_EXECUTION_CHANNELS.getState) as Promise<IpcResult<QueryOperationState>>,
+  onQueryOperationStateChanged: (listener: (state: QueryOperationState) => void) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: QueryOperationState) => listener(state);
+    ipcRenderer.on(QUERY_EXECUTION_CHANNELS.stateChanged, wrappedListener);
+    return () => ipcRenderer.removeListener(QUERY_EXECUTION_CHANNELS.stateChanged, wrappedListener);
+  },
   listSavedQueries: () =>
     ipcRenderer.invoke(LOCAL_QUERY_DATA_CHANNELS.listSavedQueries) as Promise<IpcResult<SavedQuery[]>>,
   createSavedQuery: (input: CreateSavedQueryInput) =>

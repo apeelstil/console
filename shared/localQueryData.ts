@@ -1,6 +1,6 @@
 import type { ConnectionEnvironment, IpcResult } from './connectionProfiles';
 
-export type QueryActivityStatus = 'SUCCESS' | 'ERROR' | 'BLOCKED' | 'TIMEOUT';
+export type QueryActivityStatus = 'SUCCESS' | 'ERROR' | 'BLOCKED' | 'TIMEOUT' | 'CANCELLED';
 export type AuditOperation = 'EXECUTE' | 'MUTATION' | 'INSERT' | 'UPDATE' | 'COMMIT' | 'ROLLBACK';
 export type AuditOutcome =
   | QueryActivityStatus
