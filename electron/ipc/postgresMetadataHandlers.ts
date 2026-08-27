@@ -7,6 +7,7 @@ import {
 } from '../postgres/postgresMetadataService';
 
 const MAX_IDENTIFIER_LENGTH = 128;
+const MAX_SEARCH_TERM_LENGTH = 128;
 type MetadataServiceProvider = () => PostgresMetadataService | undefined;
 
 export function registerPostgresMetadataHandlers(getService: MetadataServiceProvider): void {
@@ -26,6 +27,9 @@ export function registerPostgresMetadataHandlers(getService: MetadataServiceProv
       ),
     ),
   );
+
+  ipcMain.handle(POSTGRES_METADATA_CHANNELS.searchDatabaseMetadata, (_event, term: unknown) =>
+    respond(getService, (service) => service.searchDatabaseMetadata(parseSearchTerm(term))));
 }
 
 async function respond<T>(
@@ -47,4 +51,13 @@ function parseIdentifier(value: unknown, label: string): string {
     throw new MetadataServiceError(`Invalid ${label} name.`);
   }
   return value;
+}
+
+function parseSearchTerm(value: unknown): string {
+  if (typeof value !== 'string') throw new MetadataServiceError('Некорректная строка поиска.');
+  const term = value.trim();
+  if (term.length < 2 || term.length > MAX_SEARCH_TERM_LENGTH) {
+    throw new MetadataServiceError('Введите от 2 до 128 символов для поиска.');
+  }
+  return term;
 }

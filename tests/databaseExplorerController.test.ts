@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {
   DatabaseColumn,
+  DatabaseMetadataSearchResult,
   DatabaseObject,
   PostgresMetadataApi,
 } from '../shared/databaseMetadata';
-import { DatabaseExplorerController } from '../src/databaseExplorerController';
+import {
+  DATABASE_SEARCH_DEBOUNCE_MS,
+  DatabaseExplorerController,
+} from '../src/databaseExplorerController';
 
 const oldObject: DatabaseObject = { schema: 'public', name: 'accounts', type: 'TABLE' };
 const oldColumn: DatabaseColumn = {
@@ -51,6 +55,7 @@ test('Scenario H: reconnect discards the old tree and ignores its late column re
     }),
     listSchemaObjects: async () => ({ ok: true, data: [oldObject] }),
     listColumns: () => deferredColumns.promise,
+    searchDatabaseMetadata: async () => ({ ok: true, data: [] }),
   };
   const controller = new DatabaseExplorerController(api);
 
@@ -92,6 +97,115 @@ test('Scenario I: manual refresh reloads schemas and closes all old branches', a
   assert.equal(state.selectedObject, undefined);
 });
 
+test('search enforces minimum length and limit while an empty query preserves the lazy tree', async () => {
+  assert.equal(DATABASE_SEARCH_DEBOUNCE_MS, 300);
+  let searchCalls = 0;
+  const api = createMetadataApi();
+  api.searchDatabaseMetadata = async () => {
+    searchCalls += 1;
+    return {
+      ok: true,
+      data: Array.from({ length: 105 }, (_, index): DatabaseMetadataSearchResult => ({
+        type: 'TABLE',
+        schema: 'public',
+        objectName: `account_${index}`,
+        objectType: 'TABLE',
+      })),
+    };
+  };
+  const controller = new DatabaseExplorerController(api, 0);
+  await controller.activate('session-a');
+  await controller.toggleSchema('public');
+  const lazyObjects = controller.getSnapshot().objectsBySchema;
+
+  await controller.searchMetadata('');
+  assert.equal(searchCalls, 0);
+  assert.equal(controller.getSnapshot().search.query, '');
+  assert.equal(controller.getSnapshot().objectsBySchema, lazyObjects);
+
+  await controller.searchMetadata('a');
+  assert.equal(searchCalls, 0);
+  assert.equal(controller.getSnapshot().search.status, 'idle');
+
+  await controller.searchMetadata('ac');
+  assert.equal(searchCalls, 1);
+  assert.equal(controller.getSnapshot().search.status, 'loaded');
+  assert.equal(controller.getSnapshot().search.data.length, 100);
+  assert.equal(controller.getSnapshot().objectsBySchema, lazyObjects);
+});
+
+test('a stale metadata search response cannot replace a newer result', async () => {
+  const first = createDeferred<{ ok: true; data: DatabaseMetadataSearchResult[] }>();
+  const second = createDeferred<{ ok: true; data: DatabaseMetadataSearchResult[] }>();
+  const api = createMetadataApi();
+  api.searchDatabaseMetadata = (term) => term === 'old' ? first.promise : second.promise;
+  const controller = new DatabaseExplorerController(api, 0);
+  await controller.activate('session-a');
+
+  const oldSearch = controller.searchMetadata('old');
+  const newSearch = controller.searchMetadata('new');
+  second.resolve({ ok: true, data: [{ type: 'VIEW', schema: 'public', objectName: 'new_view', objectType: 'VIEW' }] });
+  await newSearch;
+  first.resolve({ ok: true, data: [{ type: 'TABLE', schema: 'public', objectName: 'old_table', objectType: 'TABLE' }] });
+  await oldSearch;
+
+  const state = controller.getSnapshot().search;
+  assert.equal(state.query, 'new');
+  assert.deepEqual(state.data, [{ type: 'VIEW', schema: 'public', objectName: 'new_view', objectType: 'VIEW' }]);
+});
+
+test('debounce coalesces rapid input into one PostgreSQL metadata request', async () => {
+  const terms: string[] = [];
+  const api = createMetadataApi();
+  api.searchDatabaseMetadata = async (term) => {
+    terms.push(term);
+    return { ok: true, data: [] };
+  };
+  const controller = new DatabaseExplorerController(api, 10);
+  await controller.activate('session-a');
+
+  await Promise.all([
+    controller.searchMetadata('or'),
+    controller.searchMetadata('orde'),
+    controller.searchMetadata('order'),
+  ]);
+
+  assert.deepEqual(terms, ['order']);
+});
+
+test('selecting a search result reveals the lazy object and loads only its columns', async () => {
+  const api = createMetadataApi();
+  let objectCalls = 0;
+  let columnCalls = 0;
+  api.listSchemaObjects = async () => {
+    objectCalls += 1;
+    return { ok: true, data: [oldObject] };
+  };
+  api.listColumns = async () => {
+    columnCalls += 1;
+    return { ok: true, data: [oldColumn] };
+  };
+  api.searchDatabaseMetadata = async () => ({
+    ok: true,
+    data: [{ type: 'COLUMN', schema: 'public', objectName: 'accounts', objectType: 'TABLE', columnName: 'id', dataType: 'integer' }],
+  });
+  const controller = new DatabaseExplorerController(api, 0);
+  await controller.activate('session-a');
+  await controller.searchMetadata('id');
+  const result = controller.getSnapshot().search.data[0];
+  assert.ok(result);
+
+  await controller.revealSearchResult(result);
+
+  assert.equal(objectCalls, 1);
+  assert.equal(columnCalls, 1);
+  assert.deepEqual(controller.getSelection(), { object: oldObject, columns: [oldColumn] });
+  assert.equal(controller.getSnapshot().search.query, '');
+  assert.equal(controller.getSnapshot().expandedSchemas.includes(JSON.stringify('public')), true);
+  assert.equal(controller.getSnapshot().expandedGroups.includes(JSON.stringify(['public', 'TABLE'])), true);
+  assert.equal(controller.getSnapshot().expandedObjects.includes(JSON.stringify(['public', 'accounts'])), true);
+});
+
 function createMetadataApi(onListSchemas?: () => void): PostgresMetadataApi {
   return {
     listSchemas: async () => {
@@ -100,6 +214,7 @@ function createMetadataApi(onListSchemas?: () => void): PostgresMetadataApi {
     },
     listSchemaObjects: async () => ({ ok: true, data: [oldObject] }),
     listColumns: async () => ({ ok: true, data: [oldColumn] }),
+    searchDatabaseMetadata: async () => ({ ok: true, data: [] }),
   };
 }
 

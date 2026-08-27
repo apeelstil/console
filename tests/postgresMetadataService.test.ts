@@ -7,6 +7,7 @@ import {
   type PostgresQueryResult,
 } from '../electron/postgres/postgresConnectionManager';
 import {
+  DATABASE_METADATA_SEARCH_LIMIT,
   MetadataServiceError,
   PostgresMetadataService,
   type ActiveClientProvider,
@@ -141,6 +142,58 @@ test('Scenario F: a permission error is safe and does not disconnect the active 
   client.queryError = undefined;
   client.responses.push([{ name: 'public' }]);
   assert.deepEqual(await service.listSchemas(), [{ name: 'public' }]);
+});
+
+test('metadata search is case-insensitive across schemas, tables, views, and columns', async () => {
+  const { client, service } = createHarness();
+  client.responses.push([
+    { result_type: 'SCHEMA', schema_name: 'OrderSupport', object_name: null, object_type: null, column_name: null, data_type: null, udt_name: null },
+    { result_type: 'TABLE', schema_name: 'public', object_name: 'Orders', object_type: 'BASE TABLE', column_name: null, data_type: null, udt_name: null },
+    { result_type: 'VIEW', schema_name: 'public', object_name: 'OrderSummary', object_type: 'VIEW', column_name: null, data_type: null, udt_name: null },
+    { result_type: 'COLUMN', schema_name: 'public', object_name: 'orders', object_type: 'BASE TABLE', column_name: 'ORDER_NUMBER', data_type: 'text', udt_name: 'text' },
+  ]);
+
+  const results = await service.searchDatabaseMetadata('oRdEr');
+
+  assert.deepEqual(results, [
+    { type: 'SCHEMA', schema: 'OrderSupport' },
+    { type: 'TABLE', schema: 'public', objectName: 'Orders', objectType: 'TABLE' },
+    { type: 'VIEW', schema: 'public', objectName: 'OrderSummary', objectType: 'VIEW' },
+    { type: 'COLUMN', schema: 'public', objectName: 'orders', objectType: 'TABLE', columnName: 'ORDER_NUMBER', dataType: 'text', nativeType: 'text' },
+  ]);
+  const request = asQueryConfig(client.requests[0]);
+  assert.deepEqual(request.values, ['oRdEr']);
+  assert.equal(request.text.includes('oRdEr'), false);
+  assert.match(request.text, /strpos\(lower\(table_name\), lower\(\$1\)\) > 0/);
+  assert.match(request.text, /strpos\(lower\(columns\.column_name\), lower\(\$1\)\) > 0/);
+  assert.match(request.text, /LIMIT 100/);
+});
+
+test('metadata search excludes system schemas and returns at most 100 results', async () => {
+  const { client, service } = createHarness();
+  const rows = Array.from({ length: DATABASE_METADATA_SEARCH_LIMIT + 1 }, (_, index) => ({
+    result_type: 'TABLE',
+    schema_name: 'public',
+    object_name: `order_${index}`,
+    object_type: 'BASE TABLE',
+    column_name: null,
+    data_type: null,
+    udt_name: null,
+  }));
+  client.responses.push([
+    { ...rows[0], schema_name: 'information_schema' },
+    { ...rows[0], schema_name: 'pg_catalog' },
+    { ...rows[0], schema_name: 'pg_temp_4' },
+    ...rows,
+  ]);
+
+  const results = await service.searchDatabaseMetadata('order');
+
+  assert.equal(results.length, DATABASE_METADATA_SEARCH_LIMIT);
+  assert.equal(results.every((result) => result.schema === 'public'), true);
+  const request = asQueryConfig(client.requests[0]);
+  assert.match(request.text, /schema_name <> 'information_schema'/);
+  assert.match(request.text, /left\(columns\.table_schema, 3\) <> 'pg_'/);
 });
 
 function createHarness() {

@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import Database from 'better-sqlite3';
 import { ConnectionProfileRepository } from '../electron/storage/connectionProfileRepository';
-import { CURRENT_SCHEMA_VERSION, initializeDatabase } from '../electron/storage/database';
+import { ConnectionProfileService } from '../electron/storage/connectionProfileService';
+import {
+  CURRENT_SCHEMA_VERSION,
+  initializeDatabase,
+  LOCAL_DATABASE_FILENAME,
+} from '../electron/storage/database';
 import {
   AuditLogRepository,
   QUERY_HISTORY_LIMIT,
@@ -19,7 +24,13 @@ import {
 } from '../electron/storage/queryActivityService';
 import { SavedQueryRepository } from '../electron/storage/savedQueryRepository';
 import { SavedQueryService, SavedQueryServiceError } from '../electron/storage/savedQueryService';
-import { LOCAL_QUERY_DATA_CHANNELS, type AuditLogEntry, type QueryHistoryEntry } from '../shared/localQueryData';
+import { serializeAuditExport, serializeHistoryExport } from '../electron/export/queryActivityExport';
+import {
+  LOCAL_QUERY_DATA_CHANNELS,
+  parseQueryActivityExportRequest,
+  type AuditLogEntry,
+  type QueryHistoryEntry,
+} from '../shared/localQueryData';
 import { commitEditorLoad, prepareEditorLoad } from '../src/editorLoadPolicy';
 
 const testDirectory = mkdtempSync(path.join(tmpdir(), 'supra-query-data-'));
@@ -67,6 +78,103 @@ test('databases newer than schema v5 are rejected', () => {
   database.pragma('user_version = 6');
   database.close();
   assert.throws(() => initializeDatabase(databasePath), /newer application version/);
+});
+
+test('independent userData directories isolate Profiles, Saved Queries, History, and Audit', async () => {
+  const userADirectory = path.join(testDirectory, 'windows-user-a');
+  const userBDirectory = path.join(testDirectory, 'windows-user-b');
+  mkdirSync(userADirectory);
+  mkdirSync(userBDirectory);
+
+  const userADatabasePath = path.join(userADirectory, LOCAL_DATABASE_FILENAME);
+  const userBDatabasePath = path.join(userBDirectory, LOCAL_DATABASE_FILENAME);
+  assert.notEqual(userADatabasePath, userBDatabasePath);
+
+  const userADatabase = initializeDatabase(userADatabasePath);
+  new ConnectionProfileService(new ConnectionProfileRepository(userADatabase)).createProfile({
+    name: 'User A profile',
+    host: 'user-a-host',
+    port: 5432,
+    database: 'user_a_database',
+    username: 'user_a',
+    environment: 'TEST',
+  });
+  new SavedQueryService(new SavedQueryRepository(userADatabase)).createQuery({
+    name: 'User A query',
+    sqlText: 'SELECT 1;',
+  });
+  await new LocalQueryActivityService(
+    new QueryHistoryRepository(userADatabase),
+    new AuditLogRepository(userADatabase),
+    identity,
+  ).recordAttempt(attempt('SUCCESS'));
+  userADatabase.close();
+
+  const userBDatabase = initializeDatabase(userBDatabasePath);
+  assert.deepEqual(new ConnectionProfileRepository(userBDatabase).list(), []);
+  assert.deepEqual(new SavedQueryRepository(userBDatabase).list(), []);
+  assert.deepEqual(new QueryHistoryRepository(userBDatabase).list(), []);
+  assert.deepEqual(new AuditLogRepository(userBDatabase).list(), []);
+
+  new ConnectionProfileService(new ConnectionProfileRepository(userBDatabase)).createProfile({
+    name: 'User B profile',
+    host: 'user-b-host',
+    port: 5432,
+    database: 'user_b_database',
+    username: 'user_b',
+    environment: 'DEV',
+  });
+  new SavedQueryService(new SavedQueryRepository(userBDatabase)).createQuery({
+    name: 'User B query',
+    sqlText: 'SELECT 2;',
+  });
+  await new LocalQueryActivityService(
+    new QueryHistoryRepository(userBDatabase),
+    new AuditLogRepository(userBDatabase),
+    identity,
+  ).recordAttempt({
+    ...attempt('BLOCKED'),
+    sqlText: 'DELETE FROM blocked;',
+  });
+  userBDatabase.close();
+
+  const reopenedUserA = initializeDatabase(userADatabasePath);
+  assert.deepEqual(
+    new ConnectionProfileRepository(reopenedUserA).list().map((profile) => profile.name),
+    ['User A profile'],
+  );
+  assert.deepEqual(
+    new SavedQueryRepository(reopenedUserA).list().map((query) => query.name),
+    ['User A query'],
+  );
+  assert.deepEqual(
+    new QueryHistoryRepository(reopenedUserA).list().map((entry) => entry.sqlText),
+    ['SELECT 1;'],
+  );
+  assert.deepEqual(
+    new AuditLogRepository(reopenedUserA).list().map((entry) => entry.sqlText),
+    ['SELECT 1;'],
+  );
+  reopenedUserA.close();
+
+  const reopenedUserB = initializeDatabase(userBDatabasePath);
+  assert.deepEqual(
+    new ConnectionProfileRepository(reopenedUserB).list().map((profile) => profile.name),
+    ['User B profile'],
+  );
+  assert.deepEqual(
+    new SavedQueryRepository(reopenedUserB).list().map((query) => query.name),
+    ['User B query'],
+  );
+  assert.deepEqual(
+    new QueryHistoryRepository(reopenedUserB).list().map((entry) => entry.sqlText),
+    ['DELETE FROM blocked;'],
+  );
+  assert.deepEqual(
+    new AuditLogRepository(reopenedUserB).list().map((entry) => entry.sqlText),
+    ['DELETE FROM blocked;'],
+  );
+  reopenedUserB.close();
 });
 
 test('migration 2 through 5 preserves existing Audit rows and enables mutation outcomes', () => {
@@ -248,6 +356,91 @@ test('History/Audit DTOs and IPC contain no credentials or Audit mutation channe
   assert.deepEqual(channelNames.filter((name) => name.toLowerCase().includes('audit')), ['listAuditLog']);
   assert.doesNotMatch(preloadSource, /(write|create|update|delete)Audit/i);
   database.close();
+});
+
+test('History CSV export is UTF-8 Excel-friendly and escapes SQL and Russian text', () => {
+  const entry: QueryHistoryEntry = {
+    ...historyEntry(1),
+    sqlText: 'SELECT "Имя", note\nFROM support.tickets WHERE note = \'Привет, мир\';',
+    errorMessage: 'Ошибка: значение "не найдено", повторите',
+  };
+
+  const csv = serializeHistoryExport([entry], 'CSV');
+
+  assert.equal(csv.startsWith('\uFEFF'), true);
+  assert.equal(csv.endsWith('\r\n'), true);
+  assert.match(csv, /"SELECT ""Имя"", note\nFROM support\.tickets WHERE note = 'Привет, мир';"/);
+  assert.match(csv, /"Ошибка: значение ""не найдено"", повторите"/);
+});
+
+test('Audit JSON export contains readable real records without UI markup', () => {
+  const entry: AuditLogEntry = {
+    ...auditEntry(2),
+    sqlText: 'SELECT * FROM журнал;',
+    errorMessage: 'Проверка завершена',
+  };
+
+  const json = serializeAuditExport([entry], 'JSON');
+  const parsed = JSON.parse(json) as AuditLogEntry[];
+
+  assert.deepEqual(parsed, [entry]);
+  assert.match(json, /\n {2}\{/);
+  assert.equal(json.endsWith('\n'), true);
+  assert.doesNotMatch(json, /className|<table|<span/i);
+});
+
+test('activity exports use an allowlist and never include credentials', () => {
+  const secretHistory = Object.assign(historyEntry(3), {
+    password: 'history-password-secret',
+    encryptedPassword: 'history-encrypted-secret',
+    connectionString: 'postgres://history-connection-secret',
+  });
+  const secretAudit = Object.assign(auditEntry(4), {
+    password: 'audit-password-secret',
+    temporaryPassword: 'audit-temporary-secret',
+    connectionString: 'postgres://audit-connection-secret',
+  });
+
+  const exports = [
+    serializeHistoryExport([secretHistory], 'CSV'),
+    serializeHistoryExport([secretHistory], 'JSON'),
+    serializeAuditExport([secretAudit], 'CSV'),
+    serializeAuditExport([secretAudit], 'JSON'),
+  ];
+
+  for (const content of exports) {
+    assert.doesNotMatch(content, /password|encryptedPassword|temporaryPassword|connectionString/i);
+    assert.doesNotMatch(content, /history-password-secret|history-encrypted-secret|history-connection-secret/);
+    assert.doesNotMatch(content, /audit-password-secret|audit-temporary-secret|audit-connection-secret/);
+  }
+});
+
+test('activity export IPC accepts only source and format while filesystem access remains in main', () => {
+  assert.deepEqual(
+    parseQueryActivityExportRequest({ source: 'HISTORY', format: 'CSV' }),
+    { source: 'HISTORY', format: 'CSV' },
+  );
+  assert.deepEqual(
+    parseQueryActivityExportRequest({ source: 'AUDIT', format: 'JSON' }),
+    { source: 'AUDIT', format: 'JSON' },
+  );
+  assert.throws(
+    () => parseQueryActivityExportRequest({ source: 'HISTORY', format: 'CSV', filePath: 'arbitrary.csv' }),
+    /Invalid query activity export request/,
+  );
+  assert.throws(() => parseQueryActivityExportRequest({ source: 'PROFILES', format: 'CSV' }));
+  assert.throws(() => parseQueryActivityExportRequest({ source: 'AUDIT', format: 'XML' }));
+
+  const preloadSource = readFileSync(path.join(process.cwd(), 'electron', 'preload.ts'), 'utf8');
+  const mainHandlerSource = readFileSync(
+    path.join(process.cwd(), 'electron', 'ipc', 'localQueryDataHandlers.ts'),
+    'utf8',
+  );
+  assert.match(preloadSource, /exportQueryActivity:\s*\(request/);
+  assert.doesNotMatch(preloadSource, /node:fs|showSaveDialog|writeFile/);
+  assert.match(mainHandlerSource, /dialog\.showSaveDialog/);
+  assert.match(mainHandlerSource, /writeFile\(selection\.filePath/);
+  assert.equal(LOCAL_QUERY_DATA_CHANNELS.exportQueryActivity, 'local-query-data:activity:export');
 });
 
 test('Audit storage failure is visible, secret-free, and does not prevent History', async () => {

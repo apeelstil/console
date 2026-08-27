@@ -2,7 +2,7 @@
   "name": "supra-query-console",
   "version": "1.0.0",
   "private": true,
-  "description": "Desktop SQL workspace for SUPRA technical support",
+  "description": "SUPRA Query Console",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "npm run clean:electron && npm run build:preload && concurrently -k \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"vite build --config vite.preload.config.mts --watch\" \"wait-on tcp:127.0.0.1:5173 file:dist-electron/electron/main.js file:dist-electron/electron/preload.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
@@ -46,6 +46,9 @@
   "build": {
     "appId": "ru.supra.queryconsole",
     "productName": "SUPRA Query Console",
+    "executableName": "SUPRA-Query-Console",
+    "copyright": "",
+    "afterPack": "scripts/stripUnsupportedWindowsMetadata.mjs",
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/prebuilds/*.node",
@@ -58,12 +61,17 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "assets/supra-icon.ico",
       "package.json",
+      "!**/*.db",
+      "!**/*.db-wal",
+      "!**/*.db-shm",
       "!node_modules/better-sqlite3/prebuilds/darwin-*.node",
       "!node_modules/better-sqlite3/prebuilds/linux*.node",
       "!node_modules/better-sqlite3/prebuilds/win32-arm64.node"
     ],
     "win": {
+      "icon": "assets/supra-icon.ico",
       "target": [
         {
           "target": "portable",

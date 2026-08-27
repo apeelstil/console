@@ -10,7 +10,7 @@ One schema-qualified INSERT or UPDATE can use the separate guarded mutation path
 
 While a mutation transaction is pending, a shared main-process operation gate blocks SELECT, metadata, Test Connection, Connect, and a second mutation. The same gate reserves an active SELECT before validation, blocking mutation and other PostgreSQL interleaving until SELECT cleanup finishes. Renderer IPC accepts only current main-process operation IDs, a one-time mutation preparation ID, and the exact current transaction ID for COMMIT/ROLLBACK; it cannot submit arbitrary transaction-control SQL. Disconnect during SELECT first requests cancellation and waits for query cleanup/ROLLBACK, then closes the permanent client. Disconnect and application shutdown also attempt pending-mutation ROLLBACK before close, while unexpected connection loss clears local transaction state.
 
-The application database is named `supra-console.db` and is resolved at runtime under Electron's `app.getPath('userData')`. It is never stored next to the portable executable.
+The application database is named `supra-console.db` and is resolved at runtime under Electron's `app.getPath('userData')`. On Windows this is a per-user directory: separate Windows accounts receive separate Profiles, Saved Queries, History, and Audit storage. It is never stored next to or carried with the portable executable.
 
 SQLite schema version 5 also stores local Saved Queries, the latest 500 user Execute attempts, and an untrimmed local Audit Log. Query execution records SUCCESS, PostgreSQL ERROR, TIMEOUT, safety BLOCKED, and manual CANCELLED outcomes in the main process. Mutation audit additionally records validation, pending INSERT/UPDATE, COMMIT, manual/automatic ROLLBACK, errors, and connection loss. The renderer can manage Saved Queries and read History/Audit, but it has no Audit create, update, or delete IPC. Loading Saved/History SQL only replaces editor text after the existing Cancel/Replace safeguard and never executes it.
 
@@ -72,5 +72,5 @@ Use only disposable TEST/DEV data and a test account with the minimum required d
 
 - Results are limited to 1000 displayed rows; SELECT and mutation statements have a 15-second timeout, and an uncommitted mutation is automatically rolled back after 120 seconds.
 - Audit is local operational trace data, not tamper-proof centralized security logging.
-- The portable executable is unsigned and currently uses the default Electron application icon; Windows SmartScreen policy may require administrator review before internal distribution.
+- The portable executable is unsigned; Windows SmartScreen policy may require administrator review before internal distribution.
 - Only Windows 10/11 x64 is supported. There is no auto-update, remote audit, cloud sync, or shared query service.

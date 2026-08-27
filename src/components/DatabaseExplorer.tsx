@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import type { DatabaseColumn, DatabaseObject, DatabaseObjectType, PostgresMetadataApi } from '../../shared/databaseMetadata';
+import type {
+  DatabaseColumn,
+  DatabaseMetadataSearchResult,
+  DatabaseObject,
+  DatabaseObjectType,
+  PostgresMetadataApi,
+} from '../../shared/databaseMetadata';
 import type { ActiveConnectionInfo } from '../../shared/postgresConnection';
 import {
   DatabaseExplorerController,
@@ -19,6 +25,7 @@ const unavailableMetadataApi: PostgresMetadataApi = {
   listSchemas: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
   listSchemaObjects: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
   listColumns: async () => ({ ok: false, error: 'Просмотр метаданных базы данных недоступен.' }),
+  searchDatabaseMetadata: async () => ({ ok: false, error: 'Поиск по метаданным базы данных недоступен.' }),
 };
 
 export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExplorerProps) {
@@ -30,6 +37,7 @@ export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExpl
   const activeSession = connection ? connectionSessionKey(connection) : undefined;
   const lastSession = useRef<string | undefined>(undefined);
   const selection = useMemo(() => controller.getSelection(state), [controller, state]);
+  const searchActive = Boolean(state.search.query.trim());
 
   useEffect(() => {
     if (activeSession && lastSession.current !== activeSession) {
@@ -56,9 +64,27 @@ export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExpl
           onClick={() => void controller.refresh()}
         >↻ Обновить</button>
       </div>
+      <div className="explorer-search">
+        <span aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          aria-label="Поиск по объектам базы данных"
+          placeholder="Поиск"
+          value={state.search.query}
+          maxLength={128}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={!connection}
+          onChange={(event) => void controller.searchMetadata(event.target.value)}
+        />
+        {searchActive && (
+          <button type="button" aria-label="Очистить поиск" title="Очистить" onClick={() => controller.clearSearch()}>×</button>
+        )}
+      </div>
       <div className="explorer-tree" role="tree" aria-label="Объекты базы данных">
         {!connection && <div className="empty-connection">Нет активного подключения</div>}
-        {connection && <>
+        {connection && searchActive && <SearchResults state={state.search} onSelect={(result) => void controller.revealSearchResult(result)} />}
+        {connection && !searchActive && <>
           <TreeRow depth={0} expanded icon="database" label={connection.name} detail={connection.environment} />
           <TreeRow depth={1} expanded icon="folder" label="Схемы" />
           {state.schemas.status === 'loading' && <TreeMessage depth={2} message="Загрузка…" />}
@@ -82,6 +108,39 @@ export function DatabaseExplorer({ connection, onSelectionChange }: DatabaseExpl
       </div>
     </div>
   );
+}
+
+function SearchResults({ state, onSelect }: {
+  state: ReturnType<DatabaseExplorerController['getSnapshot']>['search'];
+  onSelect: (result: DatabaseMetadataSearchResult) => void;
+}) {
+  if (state.query.trim().length < 2) {
+    return <div className="explorer-search-state">Введите минимум 2 символа</div>;
+  }
+  if (state.status === 'loading') {
+    return <div className="explorer-search-state" role="status">Поиск…</div>;
+  }
+  if (state.status === 'error') {
+    return <div className="explorer-search-state error" role="alert">{state.error ?? 'Не удалось выполнить поиск.'}</div>;
+  }
+  if (state.status === 'loaded' && state.data.length === 0) {
+    return <div className="explorer-search-state">Ничего не найдено</div>;
+  }
+
+  return <div className="explorer-search-results">{state.data.map((result, index) => (
+    <button
+      type="button"
+      role="treeitem"
+      className="explorer-search-result"
+      key={searchResultKey(result, index)}
+      title={searchResultLabel(result)}
+      onClick={() => onSelect(result)}
+    >
+      <span className={`tree-icon ${searchResultIcon(result)}`}>{iconGlyph(searchResultIcon(result))}</span>
+      <span className="search-result-label">{searchResultLabel(result)}</span>
+      <small>{searchResultDetail(result)}</small>
+    </button>
+  ))}</div>;
 }
 
 interface ObjectGroupProps {
@@ -179,6 +238,29 @@ function iconGlyph(icon: TreeRowProps['icon']): string {
   if (icon === 'view') return '▤';
   if (icon === 'schema') return '▱';
   return '▰';
+}
+
+function searchResultLabel(result: DatabaseMetadataSearchResult): string {
+  if (result.type === 'SCHEMA') return result.schema;
+  const objectLabel = `${result.schema}.${result.objectName ?? ''}`;
+  return result.type === 'COLUMN' ? `${objectLabel} → ${result.columnName ?? ''}` : objectLabel;
+}
+
+function searchResultDetail(result: DatabaseMetadataSearchResult): string {
+  if (result.type === 'SCHEMA') return 'Схема';
+  if (result.type === 'TABLE') return 'Таблица';
+  if (result.type === 'VIEW') return 'Представление';
+  return result.nativeType ?? result.dataType ?? 'Столбец';
+}
+
+function searchResultIcon(result: DatabaseMetadataSearchResult): TreeRowProps['icon'] {
+  if (result.type === 'SCHEMA') return 'schema';
+  if (result.type === 'VIEW' || result.objectType === 'VIEW') return 'view';
+  return 'table';
+}
+
+function searchResultKey(result: DatabaseMetadataSearchResult, index: number): string {
+  return JSON.stringify([result.type, result.schema, result.objectName, result.columnName, index]);
 }
 
 function connectionSessionKey(connection: ActiveConnectionInfo): string {

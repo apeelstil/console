@@ -62,6 +62,7 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 680,
     backgroundColor: '#111827',
+    icon: path.join(__dirname, '../../assets/supra-icon.ico'),
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

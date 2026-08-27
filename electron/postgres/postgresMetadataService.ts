@@ -1,5 +1,6 @@
 import type {
   DatabaseColumn,
+  DatabaseMetadataSearchResult,
   DatabaseObject,
   DatabaseObjectType,
   DatabaseSchema,
@@ -12,6 +13,7 @@ import {
 import { PostgresOperationBlockedError } from './postgresOperationGate';
 
 const METADATA_QUERY_TIMEOUT_MS = 10_000;
+export const DATABASE_METADATA_SEARCH_LIMIT = 100;
 
 const LIST_SCHEMAS_QUERY = `
   SELECT schema_name AS name
@@ -48,6 +50,65 @@ const LIST_COLUMNS_QUERY = `
   ORDER BY ordinal_position
 `;
 
+const SEARCH_DATABASE_METADATA_QUERY = `
+  WITH metadata_matches AS (
+    SELECT
+      'SCHEMA'::text AS result_type,
+      schema_name,
+      NULL::text AS object_name,
+      NULL::text AS object_type,
+      NULL::text AS column_name,
+      NULL::text AS data_type,
+      NULL::text AS udt_name
+    FROM information_schema.schemata
+    WHERE schema_name <> 'information_schema'
+      AND schema_name <> 'pg_catalog'
+      AND left(schema_name, 3) <> 'pg_'
+      AND strpos(lower(schema_name), lower($1)) > 0
+
+    UNION ALL
+
+    SELECT
+      CASE WHEN table_type = 'VIEW' THEN 'VIEW' ELSE 'TABLE' END,
+      table_schema,
+      table_name,
+      table_type,
+      NULL::text,
+      NULL::text,
+      NULL::text
+    FROM information_schema.tables
+    WHERE table_schema <> 'information_schema'
+      AND table_schema <> 'pg_catalog'
+      AND left(table_schema, 3) <> 'pg_'
+      AND table_type IN ('BASE TABLE', 'VIEW')
+      AND strpos(lower(table_name), lower($1)) > 0
+
+    UNION ALL
+
+    SELECT
+      'COLUMN'::text,
+      columns.table_schema,
+      columns.table_name,
+      tables.table_type,
+      columns.column_name,
+      columns.data_type,
+      columns.udt_name
+    FROM information_schema.columns AS columns
+    INNER JOIN information_schema.tables AS tables
+      ON tables.table_schema = columns.table_schema
+      AND tables.table_name = columns.table_name
+      AND tables.table_type IN ('BASE TABLE', 'VIEW')
+    WHERE columns.table_schema <> 'information_schema'
+      AND columns.table_schema <> 'pg_catalog'
+      AND left(columns.table_schema, 3) <> 'pg_'
+      AND strpos(lower(columns.column_name), lower($1)) > 0
+  )
+  SELECT result_type, schema_name, object_name, object_type, column_name, data_type, udt_name
+  FROM metadata_matches
+  ORDER BY schema_name, object_name NULLS FIRST, column_name NULLS FIRST, result_type
+  LIMIT 100
+`;
+
 interface SchemaRow {
   name: string;
 }
@@ -66,6 +127,16 @@ interface ColumnRow {
   is_nullable: 'YES' | 'NO';
   ordinal_position: number;
   udt_name: string;
+}
+
+interface SearchRow {
+  result_type: 'SCHEMA' | 'TABLE' | 'VIEW' | 'COLUMN';
+  schema_name: string;
+  object_name: string | null;
+  object_type: 'BASE TABLE' | 'VIEW' | null;
+  column_name: string | null;
+  data_type: string | null;
+  udt_name: string | null;
 }
 
 export interface ActiveClientProvider {
@@ -131,6 +202,22 @@ export class PostgresMetadataService {
       .sort((first, second) => first.ordinalPosition - second.ordinalPosition);
   }
 
+  async searchDatabaseMetadata(term: string): Promise<DatabaseMetadataSearchResult[]> {
+    const normalizedTerm = term.trim();
+    if (normalizedTerm.length < 2) return [];
+
+    const result = await this.query((client) => client.query({
+      text: SEARCH_DATABASE_METADATA_QUERY,
+      values: [normalizedTerm],
+      query_timeout: METADATA_QUERY_TIMEOUT_MS,
+    }));
+
+    return (result.rows as SearchRow[])
+      .filter((row) => isUserSchema(row.schema_name))
+      .map(mapSearchResult)
+      .slice(0, DATABASE_METADATA_SEARCH_LIMIT);
+  }
+
   private async query(
     operation: (client: PostgresClient) => Promise<PostgresQueryResult>,
   ): Promise<PostgresQueryResult> {
@@ -148,6 +235,28 @@ function isUserSchema(name: string): boolean {
 
 function mapObjectType(tableType: ObjectRow['table_type']): DatabaseObjectType {
   return tableType === 'VIEW' ? 'VIEW' : 'TABLE';
+}
+
+function mapSearchResult(row: SearchRow): DatabaseMetadataSearchResult {
+  if (row.result_type === 'SCHEMA') return { type: 'SCHEMA', schema: row.schema_name };
+  const objectType = row.object_type === 'VIEW' ? 'VIEW' : 'TABLE';
+  if (row.result_type === 'COLUMN') {
+    return {
+      type: 'COLUMN',
+      schema: row.schema_name,
+      objectName: row.object_name ?? '',
+      objectType,
+      columnName: row.column_name ?? '',
+      dataType: row.data_type ?? '',
+      ...(row.udt_name ? { nativeType: row.udt_name } : {}),
+    };
+  }
+  return {
+    type: objectType,
+    schema: row.schema_name,
+    objectName: row.object_name ?? '',
+    objectType,
+  };
 }
 
 interface MetadataErrorShape {

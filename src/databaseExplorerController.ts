@@ -1,5 +1,6 @@
 import type {
   DatabaseColumn,
+  DatabaseMetadataSearchResult,
   DatabaseObject,
   DatabaseObjectType,
   DatabaseSchema,
@@ -24,6 +25,11 @@ export interface DatabaseExplorerState {
   expandedGroups: string[];
   expandedObjects: string[];
   selectedObject?: DatabaseObject;
+  search: MetadataSearchState;
+}
+
+export interface MetadataSearchState extends MetadataLoadState<DatabaseMetadataSearchResult[]> {
+  query: string;
 }
 
 export interface DatabaseExplorerSelection {
@@ -32,13 +38,19 @@ export interface DatabaseExplorerSelection {
 }
 
 type Listener = () => void;
+export const DATABASE_SEARCH_DEBOUNCE_MS = 300;
+const MAX_SEARCH_TERM_LENGTH = 128;
 
 export class DatabaseExplorerController {
   private generation = 0;
+  private searchRequestId = 0;
   private state: DatabaseExplorerState = createExplorerState(this.generation);
   private readonly listeners = new Set<Listener>();
 
-  constructor(private readonly api: PostgresMetadataApi) {}
+  constructor(
+    private readonly api: PostgresMetadataApi,
+    private readonly searchDebounceMs = DATABASE_SEARCH_DEBOUNCE_MS,
+  ) {}
 
   readonly getSnapshot = (): DatabaseExplorerState => this.state;
 
@@ -103,6 +115,107 @@ export class DatabaseExplorerController {
     if (!this.state.columnsByObject[key]) {
       await this.loadColumns(object, this.state.generation);
     }
+  }
+
+  async searchMetadata(query: string): Promise<void> {
+    const requestId = ++this.searchRequestId;
+    const generation = this.state.generation;
+    const normalizedQuery = query.trim();
+
+    if (!this.state.sessionKey) {
+      this.state = { ...this.state, search: emptySearchState() };
+      this.emit();
+      return;
+    }
+    if (!normalizedQuery) {
+      this.state = { ...this.state, search: emptySearchState() };
+      this.emit();
+      return;
+    }
+    if (normalizedQuery.length < 2) {
+      this.state = { ...this.state, search: { query, status: 'idle', data: [] } };
+      this.emit();
+      return;
+    }
+    if (normalizedQuery.length > MAX_SEARCH_TERM_LENGTH) {
+      this.state = {
+        ...this.state,
+        search: { query, status: 'error', data: [], error: 'Строка поиска не должна превышать 128 символов.' },
+      };
+      this.emit();
+      return;
+    }
+
+    this.state = { ...this.state, search: { query, status: 'loading', data: [] } };
+    this.emit();
+    if (this.searchDebounceMs > 0) await delay(this.searchDebounceMs);
+    if (!this.isCurrentSearch(requestId, generation)) return;
+
+    const result = await safelyInvoke(() => this.api.searchDatabaseMetadata(normalizedQuery));
+    if (!this.isCurrentSearch(requestId, generation)) return;
+    this.state = {
+      ...this.state,
+      search: result.ok
+        ? { query, status: 'loaded', data: result.data.slice(0, 100) }
+        : { query, status: 'error', data: [], error: result.error },
+    };
+    this.emit();
+  }
+
+  async revealSearchResult(result: DatabaseMetadataSearchResult): Promise<void> {
+    if (!this.state.sessionKey) return;
+    const generation = this.state.generation;
+    const schemaKey = schemaCacheKey(result.schema);
+    this.searchRequestId += 1;
+    this.state = {
+      ...this.state,
+      expandedSchemas: addKey(this.state.expandedSchemas, schemaKey),
+    };
+    this.emit();
+
+    if (!this.state.objectsBySchema[schemaKey]) {
+      await this.loadSchemaObjects(result.schema, generation);
+    }
+    if (this.state.generation !== generation) return;
+    if (result.type === 'SCHEMA') {
+      this.clearSearch();
+      return;
+    }
+
+    const object = this.state.objectsBySchema[schemaKey]?.data.find((candidate) => (
+      candidate.name === result.objectName && candidate.type === result.objectType
+    ));
+    if (!object) {
+      this.state = {
+        ...this.state,
+        search: {
+          ...this.state.search,
+          status: 'error',
+          data: [],
+          error: 'Объект больше недоступен. Обновите поиск.',
+        },
+      };
+      this.emit();
+      return;
+    }
+
+    const groupKey = groupCacheKey(object.schema, object.type);
+    const objectKey = objectCacheKey(object.schema, object.name);
+    this.state = {
+      ...this.state,
+      selectedObject: { ...object },
+      expandedGroups: addKey(this.state.expandedGroups, groupKey),
+      expandedObjects: addKey(this.state.expandedObjects, objectKey),
+    };
+    this.emit();
+    if (!this.state.columnsByObject[objectKey]) await this.loadColumns(object, generation);
+    if (this.state.generation === generation) this.clearSearch();
+  }
+
+  clearSearch(): void {
+    this.searchRequestId += 1;
+    this.state = { ...this.state, search: emptySearchState() };
+    this.emit();
   }
 
   async retrySchemas(): Promise<void> {
@@ -179,8 +292,15 @@ export class DatabaseExplorerController {
   }
 
   private nextGeneration(): number {
+    this.searchRequestId += 1;
     this.generation += 1;
     return this.generation;
+  }
+
+  private isCurrentSearch(requestId: number, generation: number): boolean {
+    return this.searchRequestId === requestId
+      && this.state.generation === generation
+      && Boolean(this.state.sessionKey);
   }
 
   private emit(): void {
@@ -214,11 +334,16 @@ function createExplorerState(
     expandedSchemas: [],
     expandedGroups: [],
     expandedObjects: [],
+    search: emptySearchState(),
   };
 }
 
 function toggleKey(keys: string[], key: string): string[] {
   return keys.includes(key) ? keys.filter((current) => current !== key) : [...keys, key];
+}
+
+function addKey(keys: string[], key: string): string[] {
+  return keys.includes(key) ? keys : [...keys, key];
 }
 
 function loadingState<T>(): MetadataLoadState<T> {
@@ -239,4 +364,12 @@ async function safelyInvoke<T>(operation: () => Promise<{ ok: true; data: T } | 
   } catch {
     return { ok: false as const, error: 'Служба метаданных базы данных не отвечает.' };
   }
+}
+
+function emptySearchState(): MetadataSearchState {
+  return { query: '', status: 'idle', data: [] };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

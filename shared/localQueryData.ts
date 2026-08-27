@@ -65,6 +65,18 @@ export interface AuditLogEntry {
   errorMessage: string | null;
 }
 
+export type QueryActivityExportSource = 'HISTORY' | 'AUDIT';
+export type QueryActivityExportFormat = 'CSV' | 'JSON';
+
+export interface QueryActivityExportRequest {
+  source: QueryActivityExportSource;
+  format: QueryActivityExportFormat;
+}
+
+export type QueryActivityExportResult =
+  | { status: 'SAVED'; recordCount: number }
+  | { status: 'CANCELLED' };
+
 export interface LocalQueryDataApi {
   listSavedQueries: () => Promise<IpcResult<SavedQuery[]>>;
   createSavedQuery: (input: CreateSavedQueryInput) => Promise<IpcResult<SavedQuery>>;
@@ -72,6 +84,9 @@ export interface LocalQueryDataApi {
   deleteSavedQuery: (id: string) => Promise<IpcResult<{ id: string }>>;
   listQueryHistory: () => Promise<IpcResult<QueryHistoryEntry[]>>;
   listAuditLog: () => Promise<IpcResult<AuditLogEntry[]>>;
+  exportQueryActivity: (
+    request: QueryActivityExportRequest,
+  ) => Promise<IpcResult<QueryActivityExportResult>>;
 }
 
 export const LOCAL_QUERY_DATA_CHANNELS = {
@@ -81,4 +96,23 @@ export const LOCAL_QUERY_DATA_CHANNELS = {
   deleteSavedQuery: 'local-query-data:saved:delete',
   listQueryHistory: 'local-query-data:history:list',
   listAuditLog: 'local-query-data:audit:list',
+  exportQueryActivity: 'local-query-data:activity:export',
 } as const;
+
+export function parseQueryActivityExportRequest(value: unknown): QueryActivityExportRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid query activity export request.');
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 2 || keys[0] !== 'format' || keys[1] !== 'source') {
+    throw new Error('Invalid query activity export request.');
+  }
+  if (record.source !== 'HISTORY' && record.source !== 'AUDIT') {
+    throw new Error('Invalid query activity export source.');
+  }
+  if (record.format !== 'CSV' && record.format !== 'JSON') {
+    throw new Error('Invalid query activity export format.');
+  }
+  return { source: record.source, format: record.format };
+}

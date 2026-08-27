@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AuditLogEntry, QueryHistoryEntry } from '../../shared/localQueryData';
+import type {
+  AuditLogEntry,
+  QueryActivityExportFormat,
+  QueryActivityExportSource,
+  QueryHistoryEntry,
+} from '../../shared/localQueryData';
 
 interface QueryHistoryViewProps {
   onLoadSql: (sql: string, sourceLabel: string) => void;
@@ -10,6 +15,7 @@ export function QueryHistoryView({ onLoadSql }: QueryHistoryViewProps) {
   const [selected, setSelected] = useState<QueryHistoryEntry>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const activityExport = useActivityExport('HISTORY');
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -50,7 +56,14 @@ export function QueryHistoryView({ onLoadSql }: QueryHistoryViewProps) {
   }, []);
 
   return (
-    <ActivitySection title="История запросов" subtitle="Последние 500 попыток выполнения" loading={loading} onRefresh={() => void load()}>
+    <ActivitySection
+      title="История запросов"
+      subtitle="Последние 500 попыток выполнения"
+      loading={loading}
+      canExport={entries.length > 0}
+      activityExport={activityExport}
+      onRefresh={() => void load()}
+    >
       <div className="activity-table-wrap">
         <table className="activity-table">
           <thead><tr><th>Время</th><th>Подключение</th><th>Статус</th><th>SQL</th><th>Длительность</th><th>Строки</th></tr></thead>
@@ -79,6 +92,7 @@ export function AuditLogView() {
   const [selected, setSelected] = useState<AuditLogEntry>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const activityExport = useActivityExport('AUDIT');
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -119,7 +133,14 @@ export function AuditLogView() {
   }, []);
 
   return (
-    <ActivitySection title="Журнал аудита" subtitle="Локальный журнал только для чтения · не защищён от изменения файлов" loading={loading} onRefresh={() => void load()}>
+    <ActivitySection
+      title="Журнал аудита"
+      subtitle="Локальный журнал только для чтения · не защищён от изменения файлов"
+      loading={loading}
+      canExport={entries.length > 0}
+      activityExport={activityExport}
+      onRefresh={() => void load()}
+    >
       <div className="activity-table-wrap">
         <table className="activity-table audit-table">
           <thead><tr><th>Время</th><th>Пользователь Windows</th><th>Среда / база</th><th>Операция</th><th>Результат</th><th>Время / строки</th></tr></thead>
@@ -143,10 +164,25 @@ export function AuditLogView() {
   );
 }
 
-function ActivitySection({ title, subtitle, loading, onRefresh, children }: {
+interface ActivityExportFeedback {
+  kind: 'success' | 'error';
+  message: string;
+}
+
+interface ActivityExportControl {
+  format: QueryActivityExportFormat;
+  exporting: boolean;
+  feedback?: ActivityExportFeedback;
+  setFormat: (format: QueryActivityExportFormat) => void;
+  exportCurrent: () => void;
+}
+
+function ActivitySection({ title, subtitle, loading, canExport, activityExport, onRefresh, children }: {
   title: string;
   subtitle: string;
   loading: boolean;
+  canExport: boolean;
+  activityExport: ActivityExportControl;
   onRefresh: () => void;
   children: React.ReactNode;
 }) {
@@ -154,11 +190,74 @@ function ActivitySection({ title, subtitle, loading, onRefresh, children }: {
     <section className="data-section activity-section panel">
       <div className="data-section-toolbar">
         <div><strong>{title}</strong><small>{subtitle}</small></div>
-        <button type="button" className="secondary" disabled={loading} onClick={onRefresh}>{loading ? 'Обновление…' : 'Обновить'}</button>
+        <div className="activity-toolbar-actions">
+          {activityExport.feedback && (
+            <span
+              className={`activity-export-feedback ${activityExport.feedback.kind}`}
+              role={activityExport.feedback.kind === 'error' ? 'alert' : 'status'}
+            >
+              {activityExport.feedback.message}
+            </span>
+          )}
+          <select
+            aria-label="Формат экспорта"
+            value={activityExport.format}
+            disabled={loading || activityExport.exporting}
+            onChange={(event) => activityExport.setFormat(event.target.value as QueryActivityExportFormat)}
+          >
+            <option value="CSV">CSV</option>
+            <option value="JSON">JSON</option>
+          </select>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || activityExport.exporting || !canExport}
+            onClick={activityExport.exportCurrent}
+          >
+            {activityExport.exporting ? 'Экспорт…' : 'Экспорт'}
+          </button>
+          <button type="button" className="secondary" disabled={loading || activityExport.exporting} onClick={onRefresh}>
+            {loading ? 'Обновление…' : 'Обновить'}
+          </button>
+        </div>
       </div>
       <div className="activity-layout">{children}</div>
     </section>
   );
+}
+
+function useActivityExport(source: QueryActivityExportSource): ActivityExportControl {
+  const [format, setFormat] = useState<QueryActivityExportFormat>('CSV');
+  const [exporting, setExporting] = useState(false);
+  const [feedback, setFeedback] = useState<ActivityExportFeedback>();
+
+  const exportCurrent = useCallback(() => {
+    if (exporting) return;
+    setExporting(true);
+    setFeedback(undefined);
+    void (async () => {
+      try {
+        const result = await window.supraDesktop?.exportQueryActivity({ source, format });
+        if (!result) {
+          setFeedback({ kind: 'error', message: 'Экспорт недоступен.' });
+          return;
+        }
+        if (!result.ok) {
+          setFeedback({ kind: 'error', message: result.error });
+          return;
+        }
+        if (result.data.status === 'SAVED') {
+          setFeedback({ kind: 'success', message: `Экспортировано записей: ${result.data.recordCount}.` });
+        }
+      } catch {
+        setFeedback({ kind: 'error', message: 'Не удалось выполнить экспорт.' });
+      } finally {
+        setExporting(false);
+      }
+    })();
+  }, [exporting, format, source]);
+
+  return { format, exporting, feedback, setFormat, exportCurrent };
 }
 
 function ActivityDetail({ entry, onLoadSql }: {

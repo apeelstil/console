@@ -334,6 +334,102 @@ label {
   color: #8ea8af;
 }
 
+.explorer-search {
+  min-height: 36px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  color: #789198;
+  background: #10252d;
+  border-bottom: 1px solid #1c3942;
+}
+
+.explorer-search input {
+  min-width: 0;
+  height: 25px;
+  padding: 0 7px;
+  color: #d8e6e8;
+  background: #0b1d24;
+  border-color: #31515a;
+  font-size: 10px;
+}
+
+.explorer-search input::placeholder {
+  color: #708991;
+}
+
+.explorer-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.explorer-search button {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  padding: 0;
+  color: #93aaaf;
+  background: transparent;
+  border: 0;
+  font-size: 15px;
+}
+
+.explorer-search-state {
+  padding: 14px 12px;
+  color: #849aa0;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.explorer-search-state.error {
+  color: #e2a1a8;
+}
+
+.explorer-search-results {
+  padding: 1px 5px 6px;
+}
+
+.explorer-search-result {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 2px 5px;
+  align-items: center;
+  padding: 4px 6px;
+  overflow: hidden;
+  color: #bdd0d4;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 10px;
+  text-align: left;
+}
+
+.explorer-search-result:hover,
+.explorer-search-result:focus-visible {
+  background: var(--nav-hover);
+}
+
+.explorer-search-result .tree-icon {
+  grid-row: 1 / 3;
+}
+
+.search-result-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-search-result small {
+  color: #6f8990;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
 .empty-connection {
   color: #8ca1a7;
   line-height: 1.45;
@@ -833,6 +929,32 @@ textarea {
 
 .data-section-toolbar small {
   color: #7e9098;
+}
+
+.activity-toolbar-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.activity-toolbar-actions select {
+  width: 68px;
+  height: 25px;
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
+.activity-export-feedback {
+  max-width: 230px;
+  overflow: hidden;
+  color: #287252;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-export-feedback.error {
+  color: #a33b44;
 }
 
 .data-section-body {

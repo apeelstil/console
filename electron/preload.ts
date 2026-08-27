@@ -10,6 +10,7 @@ import {
 import {
   POSTGRES_METADATA_CHANNELS,
   type DatabaseColumn,
+  type DatabaseMetadataSearchResult,
   type DatabaseObject,
   type DatabaseSchema,
 } from '../shared/databaseMetadata';
@@ -28,6 +29,8 @@ import {
   LOCAL_QUERY_DATA_CHANNELS,
   type AuditLogEntry,
   type CreateSavedQueryInput,
+  type QueryActivityExportRequest,
+  type QueryActivityExportResult,
   type QueryHistoryEntry,
   type SavedQuery,
   type UpdateSavedQueryInput,
@@ -68,6 +71,8 @@ const api: SupraDesktopApi = {
     ipcRenderer.invoke(POSTGRES_METADATA_CHANNELS.listSchemaObjects, schema) as Promise<IpcResult<DatabaseObject[]>>,
   listColumns: (schema: string, objectName: string) =>
     ipcRenderer.invoke(POSTGRES_METADATA_CHANNELS.listColumns, schema, objectName) as Promise<IpcResult<DatabaseColumn[]>>,
+  searchDatabaseMetadata: (term: string) =>
+    ipcRenderer.invoke(POSTGRES_METADATA_CHANNELS.searchDatabaseMetadata, term) as Promise<IpcResult<DatabaseMetadataSearchResult[]>>,
   executeSelect: (sql: string) =>
     ipcRenderer.invoke(QUERY_EXECUTION_CHANNELS.executeSelect, sql) as Promise<QueryExecutionResponse>,
   cancelSelect: (operationId: string) =>
@@ -91,6 +96,8 @@ const api: SupraDesktopApi = {
     ipcRenderer.invoke(LOCAL_QUERY_DATA_CHANNELS.listQueryHistory) as Promise<IpcResult<QueryHistoryEntry[]>>,
   listAuditLog: () =>
     ipcRenderer.invoke(LOCAL_QUERY_DATA_CHANNELS.listAuditLog) as Promise<IpcResult<AuditLogEntry[]>>,
+  exportQueryActivity: (request: QueryActivityExportRequest) =>
+    ipcRenderer.invoke(LOCAL_QUERY_DATA_CHANNELS.exportQueryActivity, request) as Promise<IpcResult<QueryActivityExportResult>>,
   prepareMutation: (sql: string) =>
     ipcRenderer.invoke(MUTATION_TRANSACTION_CHANNELS.prepare, sql) as Promise<IpcResult<PreparedMutation>>,
   executeMutation: (preparationId: string) =>
